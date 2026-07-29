@@ -64,6 +64,9 @@ export default function Navbar() {
         </Link>
 
         <div className="hidden items-center gap-6 text-sm text-text-muted sm:flex">
+          <Link href="/" className="transition-colors hover:text-text">
+            Home
+          </Link>
           <Link href="/shop" className="transition-colors hover:text-text">
             Shop
           </Link>
@@ -121,6 +124,9 @@ export default function Navbar() {
             className="overflow-hidden border-t border-border sm:hidden"
           >
             <div className="flex flex-col gap-4 px-6 py-5 text-sm text-text-muted">
+              <Link href="/" className="hover:text-text">
+                Home
+              </Link>
               <Link href="/shop" className="hover:text-text">
                 Shop
               </Link>
