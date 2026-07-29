@@ -29,7 +29,7 @@ export default async function AdminSourcePage({
         </div>
         <Link
           href="/admin/source/new"
-          className="rounded-full bg-text px-5 py-2.5 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+          className="rounded-full neu-raised px-5 py-2.5 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
         >
           + Add New Source
         </Link>

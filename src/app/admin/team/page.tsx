@@ -46,7 +46,7 @@ export default async function AdminTeamPage({
         />
         <button
           type="submit"
-          className="flex items-center justify-center gap-2 rounded-full bg-text px-5 py-2.5 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+          className="flex items-center justify-center gap-2 rounded-full neu-raised px-5 py-2.5 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
         >
           <UserPlus size={15} /> Add admin
         </button>
@@ -57,14 +57,14 @@ export default async function AdminTeamPage({
           (admins as AdminRow[]).map((admin) => (
             <div key={admin.id} className="flex items-center justify-between py-4">
               <div className="flex items-center gap-3">
-                <span className="glass-card flex h-9 w-9 items-center justify-center rounded-full text-aurora-violet">
+                <span className="glass-card flex h-9 w-9 items-center justify-center rounded-full text-accent">
                   <Shield size={14} />
                 </span>
                 <div>
                   <p className="flex items-center gap-2 font-medium">
                     {admin.full_name || admin.email}
                     {nexIds[admin.email] && (
-                      <span className="glass-card aurora-border rounded-full px-2 py-0.5 font-mono text-[10px] font-normal text-aurora-violet">
+                      <span className="glass-card aurora-border rounded-full px-2 py-0.5 font-mono text-[10px] font-normal text-accent">
                         {nexIds[admin.email]}
                       </span>
                     )}

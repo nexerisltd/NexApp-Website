@@ -20,7 +20,7 @@ export default async function AdminPage({
   return (
     <div>
       <SavedToast saved={saved === "1"} />
-      <div className="flex items-center justify-between">;
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold">Manage apps</h1>
           <p className="mt-1 text-sm text-text-muted">
@@ -29,7 +29,7 @@ export default async function AdminPage({
         </div>
         <Link
           href="/admin/new"
-          className="rounded-full bg-text px-5 py-2.5 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+          className="rounded-full neu-raised px-5 py-2.5 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
         >
           + New app
         </Link>

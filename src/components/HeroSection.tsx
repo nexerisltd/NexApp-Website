@@ -87,7 +87,7 @@ export default function HeroSection() {
           >
             <Link
               href="/shop"
-              className="flex items-center gap-2 rounded-full bg-text px-6 py-3 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+              className="flex items-center gap-2 rounded-full neu-raised px-6 py-3 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
             >
               Start Now <ArrowRight size={15} />
             </Link>

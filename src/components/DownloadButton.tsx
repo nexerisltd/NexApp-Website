@@ -50,7 +50,7 @@ export default function DownloadButton({
       <button
         onClick={() => only && handleSelect(only)}
         disabled={!only || loadingLabel !== null}
-        className="flex items-center gap-2 rounded-full bg-text px-6 py-3 text-sm font-medium text-bg transition-transform hover:scale-[1.03] disabled:opacity-60"
+        className="flex items-center gap-2 rounded-full neu-raised px-6 py-3 text-sm font-medium text-accent transition-transform hover:scale-[1.03] disabled:opacity-60"
       >
         {loadingLabel ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
         Download
@@ -67,7 +67,7 @@ export default function DownloadButton({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-full bg-text px-6 py-3 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+        className="flex items-center gap-2 rounded-full neu-raised px-6 py-3 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
       >
         <Download size={16} />
         Download

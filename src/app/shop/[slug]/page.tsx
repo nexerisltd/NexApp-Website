@@ -3,6 +3,7 @@ import { LayoutGrid, GitBranch } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DownloadButton from "@/components/DownloadButton";
 import ScreenshotGallery from "@/components/ScreenshotGallery";
+import CopyableId from "@/components/CopyableId";
 import type { App } from "@/lib/types";
 
 export default async function AppDetailPage({
@@ -51,6 +52,7 @@ export default async function AppDetailPage({
             {typedApp.size_label && <span>{typedApp.size_label}</span>}
             <span>{typedApp.downloads_count.toLocaleString()} downloads</span>
             {typedApp.categories?.name && <span>{typedApp.categories.name}</span>}
+            <CopyableId id={typedApp.id} />
           </div>
         </div>
       </div>

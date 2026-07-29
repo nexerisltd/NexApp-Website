@@ -24,7 +24,7 @@ export default function AdminSubNav() {
             key={tab.href}
             href={tab.href}
             className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              active ? "bg-text text-bg" : "glass-card text-text-muted"
+              active ? "neu-pressed text-accent" : "glass-card text-text-muted"
             }`}
           >
             {tab.label}

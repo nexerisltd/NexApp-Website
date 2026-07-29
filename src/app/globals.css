@@ -1,36 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  /* Nexus theme — deep charcoal surface, one refined indigo→cyan gradient as the signature accent */
-  --bg: #08090d;
-  --surface: #101319;
-  --surface-2: #171b24;
-  --border: #232733;
-  --text: #eef0f6;
-  --text-muted: #8b93a6;
+  /* Neumorphism — soft, monochromatic, single-surface-color UI. Depth comes
+     entirely from dual-toned shadows (a light one and a dark one), not from
+     borders or gradients. Dark theme by default. */
+  --bg: #2a2e38;
+  --surface: #2a2e38;
+  --surface-2: #242830;
+  --border: transparent;
+  --text: #e7e9ef;
+  --text-muted: #9198a8;
 
-  --aurora-teal: #22d3ee;   /* cyan   — gradient tail */
-  --aurora-violet: #6366f1; /* indigo — gradient head */
-  --aurora-magenta: #3b82f6; /* blue   — gradient midpoint */
+  --accent: #8b98f5;
+  --success: #4ade95;
+  --danger: #f0677a;
 
-  --success: #34d399;
-  --danger: #f5455c;
+  /* Kept for any leftover references; no longer used for gradients. */
+  --aurora-teal: var(--accent);
+  --aurora-violet: var(--accent);
+  --aurora-magenta: var(--accent);
+
+  --neu-light: #363b47;
+  --neu-dark: #14161b;
 }
 
 [data-theme="light"] {
-  --bg: #f6f7fb;
-  --surface: #ffffff;
-  --surface-2: #eef0f6;
-  --border: #d9dce8;
-  --text: #12141c;
-  --text-muted: #5d6376;
+  --bg: #e7eaf0;
+  --surface: #e7eaf0;
+  --surface-2: #dfe3ea;
+  --text: #333a4a;
+  --text-muted: #767f92;
 
-  --aurora-teal: #0891b2;
-  --aurora-violet: #4f46e5;
-  --aurora-magenta: #2563eb;
+  --accent: #5b6ee1;
+  --success: #1f9e6b;
+  --danger: #cf3652;
 
-  --success: #059669;
-  --danger: #e11d48;
+  --aurora-teal: var(--accent);
+  --aurora-violet: var(--accent);
+  --aurora-magenta: var(--accent);
+
+  --neu-light: #ffffff;
+  --neu-dark: #b7bfd1;
 }
 
 @theme inline {
@@ -40,6 +50,7 @@
   --color-border: var(--border);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
   --color-aurora-teal: var(--aurora-teal);
   --color-aurora-violet: var(--aurora-violet);
   --color-aurora-magenta: var(--aurora-magenta);
@@ -57,66 +68,61 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* ----- Core neumorphic surfaces --------------------------------------- */
+
+.neu-raised {
+  background: var(--surface);
+  box-shadow: 6px 6px 14px var(--neu-dark), -6px -6px 14px var(--neu-light);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.neu-pressed {
+  background: var(--surface);
+  box-shadow: inset 4px 4px 9px var(--neu-dark), inset -4px -4px 9px var(--neu-light);
+}
+
+.neu-flat {
+  background: var(--surface);
+  box-shadow: 3px 3px 8px var(--neu-dark), -3px -3px 8px var(--neu-light);
+}
+
+/* ----- Back-compat aliases for the class names used across components -- */
+/* (glass/glass-card/glass-strong/aurora-* now render neumorphic, not glass) */
+
 .glass {
-  background: color-mix(in srgb, var(--surface) 46%, transparent);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  background: var(--surface);
+  box-shadow: 0 4px 12px var(--neu-dark);
 }
 
 .glass-card {
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  background: var(--surface);
+  box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
 }
 
 .glass-strong {
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  background: var(--surface);
+  box-shadow: 9px 9px 22px var(--neu-dark), -9px -9px 22px var(--neu-light);
 }
 
-[data-theme="light"] .glass {
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  box-shadow: 0 1px 2px rgba(20, 24, 39, 0.04);
+.aurora-border {
+  transition: box-shadow 0.2s ease;
 }
 
-[data-theme="light"] .glass-card {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: 0 1px 2px rgba(20, 24, 39, 0.04), 0 10px 28px -14px rgba(20, 24, 39, 0.16);
-}
-
-[data-theme="light"] .glass-strong {
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: 0 4px 8px rgba(20, 24, 39, 0.05), 0 20px 44px -16px rgba(20, 24, 39, 0.22);
+.aurora-border:hover,
+.aurora-border:focus-within {
+  box-shadow: inset 3px 3px 8px var(--neu-dark), inset -3px -3px 8px var(--neu-light);
 }
 
 .aurora-glow {
-  transition: box-shadow 0.3s ease;
-}
-
-.aurora-glow:hover {
-  box-shadow: 0 0 32px -8px var(--aurora-violet);
+  transition: transform 0.2s ease;
 }
 
 .aurora-blob {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.28;
-  background: linear-gradient(120deg, var(--aurora-violet), var(--aurora-magenta), var(--aurora-teal));
-  animation: blob-float 20s ease-in-out infinite;
-  pointer-events: none;
+  display: none;
 }
 
-[data-theme="light"] .aurora-blob {
-  opacity: 0.09;
-  filter: blur(110px);
-}
-
-@keyframes blob-float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(4%, -6%) scale(1.08); }
-  66% { transform: translate(-3%, 5%) scale(0.94); }
+.aurora-text {
+  color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -126,38 +132,6 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-.aurora-text {
-  background: linear-gradient(100deg, var(--aurora-violet), var(--aurora-magenta) 55%, var(--aurora-teal));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.aurora-border {
-  position: relative;
-  border: 1px solid var(--border);
-}
-
-.aurora-border::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(120deg, var(--aurora-violet), var(--aurora-magenta), var(--aurora-teal));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  pointer-events: none;
-}
-
-.aurora-border:hover::before,
-.aurora-border:focus-within::before {
-  opacity: 1;
 }
 
 @keyframes caret-blink {
@@ -170,9 +144,10 @@ body {
   animation: caret-blink 1s step-end infinite;
 }
 
-/* Modal / dialog backdrop used by the platform-picker download modal */
+/* Modal / dialog backdrop used by the platform-picker download modal and
+   the screenshot lightbox */
 .modal-backdrop {
-  background: color-mix(in srgb, black 55%, transparent);
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }

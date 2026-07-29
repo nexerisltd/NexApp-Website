@@ -53,7 +53,7 @@ export default async function AppsPage({
         {category && <input type="hidden" name="category" value={category} />}
         <button
           type="submit"
-          className="rounded-full bg-text px-5 py-2.5 text-sm font-medium text-bg transition-transform hover:scale-[1.03]"
+          className="rounded-full neu-raised px-5 py-2.5 text-sm font-medium text-accent transition-transform hover:scale-[1.03]"
         >
           Search
         </button>
@@ -63,7 +63,7 @@ export default async function AppsPage({
         <Link
           href="/shop"
           className={`rounded-full px-4 py-1.5 text-xs font-mono transition-colors ${
-            !category ? "bg-text text-bg" : "glass-card text-text-muted"
+            !category ? "neu-pressed text-accent" : "glass-card text-text-muted"
           }`}
         >
           All
@@ -73,7 +73,7 @@ export default async function AppsPage({
             key={c.id}
             href={`/shop?category=${c.slug}`}
             className={`rounded-full px-4 py-1.5 text-xs font-mono transition-colors ${
-              category === c.slug ? "bg-text text-bg" : "glass-card text-text-muted"
+              category === c.slug ? "neu-pressed text-accent" : "glass-card text-text-muted"
             }`}
           >
             {c.name}
