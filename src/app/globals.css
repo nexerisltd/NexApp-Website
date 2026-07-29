@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+:root {
+  /* Nexus theme — deep charcoal surface, one refined indigo→cyan gradient as the signature accent */
+  --bg: #08090d;
+  --surface: #101319;
+  --surface-2: #171b24;
+  --border: #232733;
+  --text: #eef0f6;
+  --text-muted: #8b93a6;
+
+  --aurora-teal: #22d3ee;   /* cyan   — gradient tail */
+  --aurora-violet: #6366f1; /* indigo — gradient head */
+  --aurora-magenta: #3b82f6; /* blue   — gradient midpoint */
+
+  --success: #34d399;
+  --danger: #f5455c;
+}
+
+[data-theme="light"] {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --border: #d9dce8;
+  --text: #12141c;
+  --text-muted: #5d6376;
+
+  --aurora-teal: #0891b2;
+  --aurora-violet: #4f46e5;
+  --aurora-magenta: #2563eb;
+
+  --success: #059669;
+  --danger: #e11d48;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-aurora-teal: var(--aurora-teal);
+  --color-aurora-violet: var(--aurora-violet);
+  --color-aurora-magenta: var(--aurora-magenta);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-display: var(--font-display-face);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.glass {
+  background: color-mix(in srgb, var(--surface) 46%, transparent);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+.glass-card {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.glass-strong {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+}
+
+[data-theme="light"] .glass {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: 0 1px 2px rgba(20, 24, 39, 0.04);
+}
+
+[data-theme="light"] .glass-card {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 1px 2px rgba(20, 24, 39, 0.04), 0 10px 28px -14px rgba(20, 24, 39, 0.16);
+}
+
+[data-theme="light"] .glass-strong {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 4px 8px rgba(20, 24, 39, 0.05), 0 20px 44px -16px rgba(20, 24, 39, 0.22);
+}
+
+.aurora-glow {
+  transition: box-shadow 0.3s ease;
+}
+
+.aurora-glow:hover {
+  box-shadow: 0 0 32px -8px var(--aurora-violet);
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.28;
+  background: linear-gradient(120deg, var(--aurora-violet), var(--aurora-magenta), var(--aurora-teal));
+  animation: blob-float 20s ease-in-out infinite;
+  pointer-events: none;
+}
+
+[data-theme="light"] .aurora-blob {
+  opacity: 0.09;
+  filter: blur(110px);
+}
+
+@keyframes blob-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(4%, -6%) scale(1.08); }
+  66% { transform: translate(-3%, 5%) scale(0.94); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.aurora-text {
+  background: linear-gradient(100deg, var(--aurora-violet), var(--aurora-magenta) 55%, var(--aurora-teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.aurora-border {
+  position: relative;
+  border: 1px solid var(--border);
+}
+
+.aurora-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(120deg, var(--aurora-violet), var(--aurora-magenta), var(--aurora-teal));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.aurora-border:hover::before,
+.aurora-border:focus-within::before {
+  opacity: 1;
+}
+
+@keyframes caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.typewriter-caret {
+  animation: caret-blink 1s step-end infinite;
+}
+
+/* Modal / dialog backdrop used by the platform-picker download modal */
+.modal-backdrop {
+  background: color-mix(in srgb, black 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
