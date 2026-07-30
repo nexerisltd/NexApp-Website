@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, LayoutDashboard, Shield } from "lucide-react";
+import { ChevronDown, LayoutDashboard, Shield, User as UserIcon } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -95,6 +95,13 @@ export default function UserMenu({ user, isAdmin }: { user: User; isAdmin: boole
                 style={{ position: "fixed", top: coords.top, right: coords.right }}
                 className="glass-strong aurora-border z-[999] flex w-48 flex-col gap-1 rounded-2xl p-1.5"
               >
+                <Link
+                  href="/profile"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
+                >
+                  <UserIcon size={14} className="text-text-muted" /> Profile
+                </Link>
                 <Link
                   href="/downloads"
                   onClick={() => setOpen(false)}

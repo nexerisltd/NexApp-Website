@@ -7,7 +7,7 @@ export default function SourceForm({
   apps,
 }: {
   source?: Source;
-  apps: { id: string; name: string; icon_url: string | null }[];
+  apps: { id: string; name: string; icon_url: string | null; app_code: string }[];
 }) {
   return (
     <form action={saveSource} className="flex flex-col gap-5">

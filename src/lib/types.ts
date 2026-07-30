@@ -14,6 +14,7 @@ export type PlatformLink = {
 
 export type App = {
   id: string;
+  app_code: string;
   name: string;
   slug: string;
   tagline: string | null;

@@ -304,3 +304,64 @@ drop trigger if exists sources_touch_updated_at on public.sources;
 create trigger sources_touch_updated_at
   before update on public.sources
   for each row execute procedure public.touch_updated_at();
+
+-- 11. App ID — a permanent, auto-generated 6-digit code per app (distinct
+--     from the internal uuid and from sources.app_id, the FK column) -----
+alter table public.apps add column if not exists app_code text unique;
+
+create or replace function public.generate_app_code()
+returns trigger
+language plpgsql
+as $$
+declare
+  candidate text;
+  taken boolean;
+begin
+  if new.app_code is not null then
+    return new;
+  end if;
+  loop
+    candidate := lpad((floor(random() * 1000000))::text, 6, '0');
+    select exists(select 1 from public.apps where app_code = candidate) into taken;
+    exit when not taken;
+  end loop;
+  new.app_code := candidate;
+  return new;
+end;
+$$;
+
+drop trigger if exists set_app_code on public.apps;
+create trigger set_app_code
+  before insert on public.apps
+  for each row execute procedure public.generate_app_code();
+
+-- Backfill any existing apps that don't have a code yet
+do $$
+declare
+  r record;
+  candidate text;
+  taken boolean;
+begin
+  for r in select id from public.apps where app_code is null loop
+    loop
+      candidate := lpad((floor(random() * 1000000))::text, 6, '0');
+      select exists(select 1 from public.apps where app_code = candidate) into taken;
+      exit when not taken;
+    end loop;
+    update public.apps set app_code = candidate where id = r.id;
+  end loop;
+end $$;
+
+-- 12. Let a signed-in user delete their own account -----------------------
+create or replace function public.delete_own_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.delete_own_account() to authenticated;

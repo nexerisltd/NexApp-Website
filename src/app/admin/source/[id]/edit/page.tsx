@@ -13,7 +13,7 @@ export default async function EditSourcePage({
 
   const [{ data: source }, { data: apps }] = await Promise.all([
     supabase.from("sources").select("*").eq("id", id).single(),
-    supabase.from("apps").select("id, name, icon_url").order("name"),
+    supabase.from("apps").select("id, name, icon_url, app_code").order("name"),
   ]);
 
   if (!source) notFound();

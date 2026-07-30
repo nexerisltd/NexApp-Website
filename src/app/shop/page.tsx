@@ -24,7 +24,7 @@ export default async function AppsPage({
     .order("downloads_count", { ascending: false });
 
   if (q) {
-    query = query.ilike("name", `%${q}%`);
+    query = query.or(`name.ilike.%${q}%,app_code.ilike.%${q}%`);
   }
   if (category) {
     const cat = (categories as Category[] | null)?.find((c) => c.slug === category);

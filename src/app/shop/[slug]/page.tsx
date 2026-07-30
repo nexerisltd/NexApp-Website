@@ -52,7 +52,7 @@ export default async function AppDetailPage({
             {typedApp.size_label && <span>{typedApp.size_label}</span>}
             <span>{typedApp.downloads_count.toLocaleString()} downloads</span>
             {typedApp.categories?.name && <span>{typedApp.categories.name}</span>}
-            <CopyableId id={typedApp.id} />
+            <CopyableId id={typedApp.app_code} label="App ID" />
           </div>
         </div>
       </div>

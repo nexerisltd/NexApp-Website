@@ -3,9 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 import AppCard from "@/components/AppCard";
 import AnimatedGrid from "@/components/AnimatedGrid";
 import HeroSection from "@/components/HeroSection";
+import GoodbyeModal from "@/components/GoodbyeModal";
 import type { App } from "@/lib/types";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ goodbye?: string }>;
+}) {
+  const { goodbye } = await searchParams;
   const supabase = await createClient();
   const { data: apps } = await supabase
     .from("apps")
@@ -16,6 +22,7 @@ export default async function Home() {
 
   return (
     <div>
+      <GoodbyeModal show={goodbye === "1"} />
       <HeroSection />
 
       {/* Featured apps */}
