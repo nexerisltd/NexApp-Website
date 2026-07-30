@@ -5,7 +5,7 @@ export default async function NewSourcePage() {
   const supabase = await createClient();
   const { data: apps } = await supabase
     .from("apps")
-    .select("id, name, icon_url")
+    .select("id, name, icon_url, app_code")
     .order("name");
 
   return (
