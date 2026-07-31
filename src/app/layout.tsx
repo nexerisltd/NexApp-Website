@@ -27,11 +27,6 @@ export const metadata: Metadata = {
   title: "NexApp — Your app store, everywhere",
   description:
     "NexApp is a web-based app store from NexAuras, with mobile and desktop apps on the way. Discover, publish and download apps in one place.",
-  icons: {
-    icon: "/assets/icon.png",
-    shortcut: "/assets/icon.png",
-    apple: "/assets/icon.png",
-  },
 };
 
 export default function RootLayout({
