@@ -1,18 +1,55 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Monitor, Smartphone, Globe, X } from "lucide-react";
+import { usePlatformPreference } from "@/lib/platformPreference";
+import type { PlatformGroup, Screenshot } from "@/lib/types";
+
+const GROUP_META: Record<PlatformGroup, { label: string; icon: typeof Monitor }> = {
+  desktop: { label: "Desktop", icon: Monitor },
+  mobile: { label: "Mobile", icon: Smartphone },
+  web: { label: "Web", icon: Globe },
+  other: { label: "Other", icon: Globe },
+};
+
+const GROUP_ORDER: PlatformGroup[] = ["desktop", "mobile", "web", "other"];
 
 export default function ScreenshotGallery({
   screenshots,
+  defaultPlatform,
   appName,
 }: {
-  screenshots: string[];
+  screenshots: Screenshot[];
+  defaultPlatform: PlatformGroup;
   appName: string;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [manualGroup, setManualGroup] = useState<PlatformGroup | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  const [storedPreference, setStoredPreference] = usePlatformPreference();
+
+  const availableGroups = useMemo(
+    () => GROUP_ORDER.filter((g) => screenshots.some((s) => s.group === g)),
+    [screenshots]
+  );
+
+  // Precedence: a switch made on this page right now > the visitor's saved
+  // site-wide preference > the platform the admin set as default for this
+  // app > whichever platform actually has screenshots.
+  const wanted = manualGroup ?? storedPreference ?? defaultPlatform;
+  const activeGroup = availableGroups.includes(wanted) ? wanted : availableGroups[0];
+
+  const visible = useMemo(
+    () => screenshots.filter((s) => s.group === activeGroup),
+    [screenshots, activeGroup]
+  );
+
+  function selectGroup(group: PlatformGroup) {
+    setManualGroup(group);
+    setStoredPreference(group);
+    setOpenIndex(null);
+  }
 
   if (screenshots.length === 0) return null;
 
@@ -24,16 +61,39 @@ export default function ScreenshotGallery({
     setOpenIndex(null);
   }
   function prev() {
-    setOpenIndex((i) => (i === null ? null : (i - 1 + screenshots.length) % screenshots.length));
+    setOpenIndex((i) => (i === null ? null : (i - 1 + visible.length) % visible.length));
   }
   function next() {
-    setOpenIndex((i) => (i === null ? null : (i + 1) % screenshots.length));
+    setOpenIndex((i) => (i === null ? null : (i + 1) % visible.length));
   }
 
   return (
     <>
-      <div className="relative mt-12">
-        {screenshots.length > 1 && (
+      {availableGroups.length > 1 && (
+        <div className="mt-10 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-mono text-text-muted">Showing:</span>
+          {availableGroups.map((group) => {
+            const meta = GROUP_META[group];
+            const Icon = meta.icon;
+            const active = group === activeGroup;
+            return (
+              <button
+                key={group}
+                type="button"
+                onClick={() => selectGroup(group)}
+                className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  active ? "neu-pressed text-accent" : "glass-card text-text-muted"
+                }`}
+              >
+                <Icon size={12} /> {meta.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="relative mt-6">
+        {visible.length > 1 && (
           <>
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center">
               <button
@@ -59,16 +119,16 @@ export default function ScreenshotGallery({
         )}
 
         <div ref={stripRef} className="flex gap-4 overflow-x-auto scroll-smooth pb-2">
-          {screenshots.map((src, i) => (
+          {visible.map((shot, i) => (
             <button
-              key={i}
+              key={shot.url + i}
               type="button"
               onClick={() => setOpenIndex(i)}
               className="aurora-border shrink-0 overflow-hidden rounded-xl bg-surface transition-transform hover:scale-[1.02]"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={src}
+                src={shot.url}
                 alt={`${appName} screenshot ${i + 1}`}
                 className="h-64 w-auto object-cover"
               />
@@ -94,7 +154,7 @@ export default function ScreenshotGallery({
               <X size={18} />
             </button>
 
-            {screenshots.length > 1 && (
+            {visible.length > 1 && (
               <>
                 <button
                   onClick={(e) => {
@@ -126,7 +186,7 @@ export default function ScreenshotGallery({
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.2 }}
               onClick={(e) => e.stopPropagation()}
-              src={screenshots[openIndex]}
+              src={visible[openIndex]?.url}
               alt={`${appName} screenshot ${openIndex + 1}`}
               className="aurora-border max-h-[85vh] max-w-[90vw] rounded-2xl object-contain"
             />

@@ -57,19 +57,30 @@ export async function saveApp(formData: FormData) {
     iconUrl = await uploadAsset(supabase, iconFile, "icons");
   }
 
-  // Screenshots: keep existing ones and append any newly uploaded files.
-  let screenshots: string[] = [];
+  // Screenshots: keep existing ones (each tagged with a platform group) and
+  // append any newly uploaded files, tagged with the group chosen for them.
+  let screenshots: { url: string; group: string }[] = [];
   try {
     screenshots = JSON.parse((formData.get("existing_screenshots") as string) || "[]");
   } catch {
     screenshots = [];
   }
+  let newGroups: string[] = [];
+  try {
+    newGroups = JSON.parse((formData.get("screenshot_groups") as string) || "[]");
+  } catch {
+    newGroups = [];
+  }
   const screenshotFiles = formData.getAll("screenshot_files") as File[];
-  for (const file of screenshotFiles) {
+  for (let i = 0; i < screenshotFiles.length; i++) {
+    const file = screenshotFiles[i];
     if (file && file.size > 0) {
-      screenshots.push(await uploadAsset(supabase, file, "screenshots"));
+      const url = await uploadAsset(supabase, file, "screenshots");
+      screenshots.push({ url, group: newGroups[i] || "desktop" });
     }
   }
+
+  const defaultPlatform = (formData.get("default_platform") as string) || "desktop";
 
   const payload = {
     name,
@@ -82,6 +93,7 @@ export async function saveApp(formData: FormData) {
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string) || null,
     platform_links: platformLinks,
+    default_platform: defaultPlatform,
     status: formData.get("status") as string,
   };
 

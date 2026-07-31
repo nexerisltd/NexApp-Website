@@ -86,11 +86,16 @@ create table if not exists public.apps (
   description text,
   category_id uuid references public.categories(id) on delete set null,
   icon_url text,
-  screenshots text[] default '{}',
+  -- Each entry: { "url": "https://...", "group": "desktop" | "mobile" | "web" | "other" }
+  screenshots jsonb not null default '[]'::jsonb,
   version text default '1.0.0',
   size_label text,                       -- e.g. "24 MB" (free-form, since files are hosted externally)
   -- Each entry: { "label": "Windows", "url": "https://...", "group": "desktop" | "mobile" | "web" | "other" }
   platform_links jsonb not null default '[]'::jsonb,
+  -- Which platform's screenshots show by default on the app page, until the
+  -- visitor picks a platform themselves (see the platform switcher above the
+  -- screenshot gallery).
+  default_platform text not null default 'desktop' check (default_platform in ('desktop', 'mobile', 'web', 'other')),
   status text not null default 'draft' check (status in ('draft', 'published')),
   downloads_count integer not null default 0,
   created_by uuid references public.profiles(id) on delete set null,
@@ -102,6 +107,42 @@ create table if not exists public.apps (
 alter table public.apps add column if not exists platform_links jsonb not null default '[]'::jsonb;
 alter table public.apps drop column if exists platforms;
 alter table public.apps drop column if exists external_link;
+
+-- Screenshots used to be a plain text[] of URLs. Convert to jsonb objects
+-- tagged with a platform group ({ "url": ..., "group": "desktop" }) so the
+-- app page can show the right screenshots for the selected platform.
+-- Existing screenshots are tagged with the app's default_platform so nothing
+-- disappears after the migration — re-tag them from the admin panel
+-- afterwards if a screenshot actually belongs to a different platform.
+alter table public.apps add column if not exists default_platform text not null default 'desktop';
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'apps'
+      and column_name = 'screenshots' and data_type = 'ARRAY'
+  ) then
+    -- ALTER COLUMN ... TYPE ... USING can't contain an aggregate subquery,
+    -- so convert via a temporary column + UPDATE instead.
+    alter table public.apps add column screenshots_jsonb jsonb not null default '[]'::jsonb;
+
+    update public.apps a
+    set screenshots_jsonb = coalesce(
+      (select jsonb_agg(jsonb_build_object('url', s, 'group', a.default_platform))
+       from unnest(a.screenshots) as s),
+      '[]'::jsonb
+    );
+
+    alter table public.apps drop column screenshots;
+    alter table public.apps rename column screenshots_jsonb to screenshots;
+  end if;
+end $$;
+
+alter table public.apps drop constraint if exists apps_default_platform_check;
+alter table public.apps
+  add constraint apps_default_platform_check
+  check (default_platform in ('desktop', 'mobile', 'web', 'other'));
 
 alter table public.apps enable row level security;
 

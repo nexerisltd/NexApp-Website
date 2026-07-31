@@ -12,6 +12,14 @@ export type PlatformLink = {
   group: PlatformGroup;
 };
 
+export type Screenshot = {
+  url: string;
+  // Which platform group this screenshot represents, so the app page can
+  // show the right set of screenshots for whichever platform the visitor
+  // has selected (falls back to `default_platform` below).
+  group: PlatformGroup;
+};
+
 export type App = {
   id: string;
   app_code: string;
@@ -21,10 +29,13 @@ export type App = {
   description: string | null;
   category_id: string | null;
   icon_url: string | null;
-  screenshots: string[];
+  screenshots: Screenshot[];
   version: string;
   size_label: string | null;
   platform_links: PlatformLink[];
+  // Which platform's screenshots to show by default (set from the admin
+  // panel) until the visitor picks one themselves.
+  default_platform: PlatformGroup;
   status: "draft" | "published";
   downloads_count: number;
   created_at: string;

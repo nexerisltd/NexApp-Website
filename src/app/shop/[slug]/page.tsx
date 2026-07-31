@@ -23,7 +23,12 @@ export default async function AppDetailPage({
 
   if (!app) notFound();
 
-  const typedApp = { ...(app as App), platform_links: (app as App).platform_links ?? [] };
+  const typedApp = {
+    ...(app as App),
+    platform_links: (app as App).platform_links ?? [],
+    screenshots: (app as App).screenshots ?? [],
+    default_platform: (app as App).default_platform ?? "desktop",
+  };
 
   const { data: source } = await supabase
     .from("sources")
@@ -31,30 +36,43 @@ export default async function AppDetailPage({
     .eq("app_id", typedApp.id)
     .maybeSingle();
 
+  const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-14">
-      <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-text-muted overflow-hidden">
-          {typedApp.icon_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={typedApp.icon_url} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <LayoutGrid size={28} />
-          )}
-        </div>
-        <div>
-          <h1 className="font-display text-3xl font-bold">{typedApp.name}</h1>
-          {typedApp.tagline && (
-            <p className="mt-1 text-text-muted">{typedApp.tagline}</p>
-          )}
-          <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-xs text-text-muted">
-            <span>v{typedApp.version}</span>
-            {typedApp.size_label && <span>{typedApp.size_label}</span>}
-            <span>{typedApp.downloads_count.toLocaleString()} downloads</span>
-            {typedApp.categories?.name && <span>{typedApp.categories.name}</span>}
-            <CopyableId id={typedApp.app_code} label="App ID" />
+      <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-text-muted overflow-hidden">
+            {typedApp.icon_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={typedApp.icon_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <LayoutGrid size={28} />
+            )}
+          </div>
+          <div>
+            <h1 className="font-display text-3xl font-bold">{typedApp.name}</h1>
+            {typedApp.tagline && (
+              <p className="mt-1 text-text-muted">{typedApp.tagline}</p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-xs text-text-muted">
+              <span>v{typedApp.version}</span>
+              {typedApp.size_label && <span>{typedApp.size_label}</span>}
+              <span>{typedApp.downloads_count.toLocaleString()} downloads</span>
+              {typedApp.categories?.name && <span>{typedApp.categories.name}</span>}
+              <CopyableId id={typedApp.app_code} label="App ID" />
+            </div>
           </div>
         </div>
+
+        <p className="shrink-0 whitespace-nowrap font-mono text-xs text-text-muted sm:text-right">
+          Last updated
+          <br className="hidden sm:block" /> {lastUpdated}
+        </p>
       </div>
 
       <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -81,7 +99,11 @@ export default async function AppDetailPage({
         )}
       </div>
 
-      <ScreenshotGallery screenshots={typedApp.screenshots} appName={typedApp.name} />
+      <ScreenshotGallery
+        screenshots={typedApp.screenshots}
+        defaultPlatform={typedApp.default_platform}
+        appName={typedApp.name}
+      />
 
       {typedApp.description && (
         <div className="mt-12 border-t border-border pt-8">

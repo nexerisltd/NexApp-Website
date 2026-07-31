@@ -116,6 +116,25 @@ export default function AppForm({
 
       <div>
         <label className="mb-1.5 block text-xs font-mono text-text-muted">
+          Default screenshot platform
+        </label>
+        <select
+          name="default_platform"
+          defaultValue={app?.default_platform ?? "desktop"}
+          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
+        >
+          <option value="desktop">Desktop</option>
+          <option value="mobile">Mobile</option>
+          <option value="web">Web</option>
+          <option value="other">Other</option>
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          Shown on the app page until a visitor picks a different platform themselves.
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-mono text-text-muted">
           Platforms & download links
         </label>
         <PlatformLinksEditor initialLinks={app?.platform_links ?? []} />
