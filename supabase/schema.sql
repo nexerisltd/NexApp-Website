@@ -37,6 +37,16 @@ create policy "Admins can view all profiles"
   on public.profiles for select
   using (public.is_admin(auth.uid()));
 
+-- Reviewer/submitter names and avatars are shown publicly across the site
+-- (reviews, submissions list, etc.), so anyone must be able to read just
+-- these display fields. This does not expose anything sensitive: profiles
+-- only ever contain id, full_name, avatar_url, role, created_at, and none
+-- of those are secrets.
+drop policy if exists "Public can view basic profile info" on public.profiles;
+create policy "Public can view basic profile info"
+  on public.profiles for select
+  using (true);
+
 drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
   on public.profiles for update
