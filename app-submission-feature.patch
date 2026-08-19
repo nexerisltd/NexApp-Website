@@ -1,0 +1,533 @@
+diff --git a/src/app/admin/submissions/actions.ts b/src/app/admin/submissions/actions.ts
+new file mode 100644
+index 0000000..367d314
+--- /dev/null
++++ b/src/app/admin/submissions/actions.ts
+@@ -0,0 +1,22 @@
++"use server";
++
++import { revalidatePath } from "next/cache";
++import { createClient } from "@/lib/supabase/server";
++
++export async function approveSubmission(formData: FormData) {
++  const supabase = await createClient();
++  const id = formData.get("id") as string;
++  const { error } = await supabase.from("apps").update({ status: "published" }).eq("id", id);
++  if (error) throw new Error(`Could not approve: ${error.message}`);
++  revalidatePath("/admin/submissions");
++  revalidatePath("/shop");
++  revalidatePath("/");
++}
++
++export async function rejectSubmission(formData: FormData) {
++  const supabase = await createClient();
++  const id = formData.get("id") as string;
++  const { error } = await supabase.from("apps").delete().eq("id", id);
++  if (error) throw new Error(`Could not reject: ${error.message}`);
++  revalidatePath("/admin/submissions");
++}
+diff --git a/src/app/admin/submissions/page.tsx b/src/app/admin/submissions/page.tsx
+new file mode 100644
+index 0000000..ea99827
+--- /dev/null
++++ b/src/app/admin/submissions/page.tsx
+@@ -0,0 +1,90 @@
++import Image from "next/image";
++import { LayoutGrid } from "lucide-react";
++import { createClient } from "@/lib/supabase/server";
++import { approveSubmission, rejectSubmission } from "@/app/admin/submissions/actions";
++import type { App } from "@/lib/types";
++
++export default async function SubmissionsPage() {
++  const supabase = await createClient();
++  const { data: submissions } = await supabase
++    .from("apps")
++    .select("*, categories(id, name, slug), profiles(full_name, avatar_url)")
++    .eq("status", "pending")
++    .order("created_at", { ascending: true });
++
++  const typedSubmissions = (submissions as App[]) ?? [];
++
++  return (
++    <div>
++      <h1 className="font-display text-2xl font-bold">Submissions</h1>
++      <p className="mt-1 text-sm text-text-muted">
++        Apps submitted by users, waiting for review. {typedSubmissions.length} pending.
++      </p>
++
++      <div className="mt-8 flex flex-col gap-4">
++        {typedSubmissions.length === 0 && (
++          <p className="text-sm text-text-muted">Nothing waiting for review right now.</p>
++        )}
++
++        {typedSubmissions.map((app) => (
++          <div key={app.id} className="glass-card rounded-2xl p-5">
++            <div className="flex items-start gap-4">
++              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-2 text-text-muted">
++                {app.icon_url ? (
++                  <Image
++                    src={app.icon_url}
++                    alt=""
++                    width={56}
++                    height={56}
++                    className="h-full w-full object-cover"
++                  />
++                ) : (
++                  <LayoutGrid size={22} />
++                )}
++              </div>
++
++              <div className="min-w-0 flex-1">
++                <p className="font-display text-base font-bold">{app.name}</p>
++                {app.tagline && (
++                  <p className="text-sm text-text-muted">{app.tagline}</p>
++                )}
++                <p className="mt-1 font-mono text-xs text-text-muted">
++                  by {app.profiles?.full_name ?? "Unknown"} · v{app.version} ·{" "}
++                  {app.categories?.name ?? "Uncategorized"} ·{" "}
++                  {app.platform_links.length} platform link
++                  {app.platform_links.length === 1 ? "" : "s"}
++                </p>
++                {app.description && (
++                  <p className="mt-2 line-clamp-2 text-sm text-text-muted">
++                    {app.description}
++                  </p>
++                )}
++              </div>
++
++              <div className="flex shrink-0 flex-col gap-2">
++                <form action={approveSubmission}>
++                  <input type="hidden" name="id" value={app.id} />
++                  <button
++                    type="submit"
++                    className="w-full rounded-full neu-raised px-4 py-2 text-xs font-medium text-accent transition-transform hover:scale-[1.03]"
++                  >
++                    Approve
++                  </button>
++                </form>
++                <form action={rejectSubmission}>
++                  <input type="hidden" name="id" value={app.id} />
++                  <button
++                    type="submit"
++                    className="w-full rounded-full px-4 py-2 text-xs font-medium text-text-muted transition-colors hover:text-danger"
++                  >
++                    Reject
++                  </button>
++                </form>
++              </div>
++            </div>
++          </div>
++        ))}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/submit/actions.ts b/src/app/submit/actions.ts
+new file mode 100644
+index 0000000..373b5d1
+--- /dev/null
++++ b/src/app/submit/actions.ts
+@@ -0,0 +1,112 @@
++"use server";
++
++import { randomUUID } from "crypto";
++import { redirect } from "next/navigation";
++import { createClient } from "@/lib/supabase/server";
++
++const ASSET_BUCKET = "app-assets";
++
++function slugify(name: string) {
++  return name
++    .toLowerCase()
++    .trim()
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/(^-|-$)/g, "");
++}
++
++async function uploadSubmissionAsset(
++  supabase: Awaited<ReturnType<typeof createClient>>,
++  userId: string,
++  file: File,
++  folder: "icons" | "screenshots"
++) {
++  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
++  const path = `submissions/${userId}/${folder}/${randomUUID()}.${ext}`;
++
++  const { error } = await supabase.storage
++    .from(ASSET_BUCKET)
++    .upload(path, file, { contentType: file.type, upsert: true });
++
++  if (error) throw new Error(`Upload failed: ${error.message}`);
++
++  const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
++  return data.publicUrl;
++}
++
++export async function submitApp(formData: FormData) {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
++  if (!user) redirect("/login");
++
++  const name = (formData.get("name") as string).trim();
++  if (!name) {
++    redirect("/submit?error=" + encodeURIComponent("App name is required."));
++  }
++
++  let platformLinks: { label: string; url: string; group: string }[] = [];
++  try {
++    platformLinks = JSON.parse((formData.get("platform_links") as string) || "[]");
++  } catch {
++    platformLinks = [];
++  }
++  platformLinks = platformLinks.filter((l) => l.label && l.url);
++  if (platformLinks.length === 0) {
++    redirect(
++      "/submit?error=" + encodeURIComponent("Add at least one platform with a download link.")
++    );
++  }
++
++  let iconUrl: string | null = null;
++  const iconFile = formData.get("icon_file") as File | null;
++  if (iconFile && iconFile.size > 0) {
++    iconUrl = await uploadSubmissionAsset(supabase, user.id, iconFile, "icons");
++  }
++
++  const screenshots: { url: string; group: string }[] = [];
++  let newGroups: string[] = [];
++  try {
++    newGroups = JSON.parse((formData.get("screenshot_groups") as string) || "[]");
++  } catch {
++    newGroups = [];
++  }
++  const screenshotFiles = formData.getAll("screenshot_files") as File[];
++  for (let i = 0; i < screenshotFiles.length; i++) {
++    const file = screenshotFiles[i];
++    if (file && file.size > 0) {
++      const url = await uploadSubmissionAsset(supabase, user.id, file, "screenshots");
++      screenshots.push({ url, group: newGroups[i] || "desktop" });
++    }
++  }
++
++  const defaultPlatform = (formData.get("default_platform") as string) || "desktop";
++  const baseSlug = slugify(name);
++  // Submissions can share a name with something already published, so make
++  // the slug unique by appending a short suffix — admins can rename on
++  // approval if they want something cleaner.
++  const slug = `${baseSlug}-${randomUUID().slice(0, 6)}`;
++
++  const { error } = await supabase.from("apps").insert({
++    name,
++    slug,
++    tagline: formData.get("tagline") as string,
++    description: formData.get("description") as string,
++    category_id: (formData.get("category_id") as string) || null,
++    icon_url: iconUrl,
++    screenshots,
++    version: (formData.get("version") as string) || "1.0.0",
++    size_label: (formData.get("size_label") as string) || null,
++    platform_links: platformLinks,
++    default_platform: defaultPlatform,
++    status: "pending",
++    created_by: user.id,
++  });
++
++  if (error) {
++    redirect(`/submit?error=${encodeURIComponent(error.message)}`);
++  }
++
++  redirect("/submit?saved=1");
++}
+diff --git a/src/app/submit/page.tsx b/src/app/submit/page.tsx
+new file mode 100644
+index 0000000..ff3632a
+--- /dev/null
++++ b/src/app/submit/page.tsx
+@@ -0,0 +1,42 @@
++import { redirect } from "next/navigation";
++import { createClient } from "@/lib/supabase/server";
++import SubmitAppForm from "@/components/SubmitAppForm";
++import FeedbackToast from "@/components/FeedbackToast";
++import type { Category } from "@/lib/types";
++
++export default async function SubmitAppPage({
++  searchParams,
++}: {
++  searchParams: Promise<{ error?: string; saved?: string }>;
++}) {
++  const { error, saved } = await searchParams;
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
++  if (!user) redirect("/login");
++
++  const { data: categories } = await supabase.from("categories").select("*").order("name");
++
++  return (
++    <div className="mx-auto max-w-xl px-6 py-14">
++      <FeedbackToast
++        error={error}
++        saved={saved === "1"}
++        successMessage="Submitted! We'll review it soon."
++        redirectTo="/submit"
++      />
++
++      <h1 className="font-display text-2xl font-bold">Submit an app</h1>
++      <p className="mt-1 text-sm text-text-muted">
++        Share something you&apos;ve built with the NexApp community. An admin will
++        review it before it goes live.
++      </p>
++
++      <div className="mt-8">
++        <SubmitAppForm categories={(categories as Category[]) ?? []} />
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/AdminSubNav.tsx b/src/components/AdminSubNav.tsx
+index 4b58e64..0ecc7da 100644
+--- a/src/components/AdminSubNav.tsx
++++ b/src/components/AdminSubNav.tsx
+@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
+ 
+ const tabs = [
+   { href: "/admin", label: "Apps" },
++  { href: "/admin/submissions", label: "Submissions" },
+   { href: "/admin/analytics", label: "Analytics" },
+   { href: "/admin/source", label: "Source" },
+   { href: "/admin/team", label: "Admins" },
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index fa1db73..9218914 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -154,6 +154,11 @@ export default function Navbar() {
+                   My Downloads
+                 </Link>
+               )}
++              {user && (
++                <Link href="/submit" className="hover:text-text">
++                  Submit an app
++                </Link>
++              )}
+               {user ? (
+                 <LogoutButton />
+               ) : (
+diff --git a/src/components/SubmitAppForm.tsx b/src/components/SubmitAppForm.tsx
+new file mode 100644
+index 0000000..63dcb66
+--- /dev/null
++++ b/src/components/SubmitAppForm.tsx
+@@ -0,0 +1,123 @@
++import { submitApp } from "@/app/submit/actions";
++import PlatformLinksEditor from "@/components/PlatformLinksEditor";
++import IconFileInput from "@/components/IconFileInput";
++import ScreenshotsFileInput from "@/components/ScreenshotsFileInput";
++import type { Category } from "@/lib/types";
++
++export default function SubmitAppForm({ categories }: { categories: Category[] }) {
++  return (
++    <form action={submitApp} className="flex flex-col gap-5">
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">Name</label>
++        <input
++          name="name"
++          required
++          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++        />
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">Tagline</label>
++        <input
++          name="tagline"
++          placeholder="One short line describing your app"
++          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++        />
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">Description</label>
++        <textarea
++          name="description"
++          rows={5}
++          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++        />
++      </div>
++
++      <div className="grid grid-cols-2 gap-4">
++        <div>
++          <label className="mb-1.5 block text-xs font-mono text-text-muted">Category</label>
++          <select
++            name="category_id"
++            defaultValue=""
++            className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++          >
++            <option value="">None</option>
++            {categories.map((c) => (
++              <option key={c.id} value={c.id}>
++                {c.name}
++              </option>
++            ))}
++          </select>
++        </div>
++        <div>
++          <label className="mb-1.5 block text-xs font-mono text-text-muted">Version</label>
++          <input
++            name="version"
++            defaultValue="1.0.0"
++            className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++          />
++        </div>
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">
++          Size label (optional)
++        </label>
++        <input
++          name="size_label"
++          placeholder="e.g. 24 MB"
++          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++        />
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">
++          Default screenshot platform
++        </label>
++        <select
++          name="default_platform"
++          defaultValue="desktop"
++          className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++        >
++          <option value="desktop">Desktop</option>
++          <option value="mobile">Mobile</option>
++          <option value="web">Web</option>
++          <option value="other">Other</option>
++        </select>
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">
++          Platforms & download links
++        </label>
++        <PlatformLinksEditor initialLinks={[]} />
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">
++          App icon (PNG/JPEG)
++        </label>
++        <IconFileInput />
++      </div>
++
++      <div>
++        <label className="mb-1.5 block text-xs font-mono text-text-muted">
++          Screenshots (PNG/JPEG, multiple allowed)
++        </label>
++        <ScreenshotsFileInput existing={[]} />
++      </div>
++
++      <p className="text-xs text-text-muted">
++        Your app will be reviewed by a NexApp admin before it appears in the store.
++      </p>
++
++      <button
++        type="submit"
++        className="mt-1 self-start rounded-full neu-raised px-6 py-2.5 text-sm font-medium text-accent transition-transform hover:scale-[1.02]"
++      >
++        Submit for review
++      </button>
++    </form>
++  );
++}
+diff --git a/src/components/UserMenu.tsx b/src/components/UserMenu.tsx
+index ad2e63d..176134e 100644
+--- a/src/components/UserMenu.tsx
++++ b/src/components/UserMenu.tsx
+@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
+ import { createPortal } from "react-dom";
+ import Link from "next/link";
+ import { AnimatePresence, motion } from "framer-motion";
+-import { ChevronDown, Heart, LayoutDashboard, Shield, User as UserIcon } from "lucide-react";
++import { ChevronDown, Heart, LayoutDashboard, Shield, UploadCloud, User as UserIcon } from "lucide-react";
+ import type { User } from "@supabase/supabase-js";
+ import LogoutButton from "@/components/LogoutButton";
+ 
+@@ -116,6 +116,13 @@ export default function UserMenu({ user, isAdmin }: { user: User; isAdmin: boole
+                 >
+                   <LayoutDashboard size={14} className="text-text-muted" /> My Downloads
+                 </Link>
++                <Link
++                  href="/submit"
++                  onClick={() => setOpen(false)}
++                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
++                >
++                  <UploadCloud size={14} className="text-text-muted" /> Submit an app
++                </Link>
+                 {isAdmin && (
+                   <Link
+                     href="/admin"
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index b766008..146b943 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -109,7 +109,7 @@ create table if not exists public.apps (
+   -- visitor picks a platform themselves (see the platform switcher above the
+   -- screenshot gallery).
+   default_platform text not null default 'desktop' check (default_platform in ('desktop', 'mobile', 'web', 'other')),
+-  status text not null default 'draft' check (status in ('draft', 'published')),
++  status text not null default 'draft' check (status in ('draft', 'published', 'pending')),
+   downloads_count integer not null default 0,
+   created_by uuid references public.profiles(id) on delete set null,
+   created_at timestamptz not null default now(),
+@@ -161,13 +161,25 @@ alter table public.apps enable row level security;
+ 
+ drop policy if exists "Published apps are public" on public.apps;
+ create policy "Published apps are public" on public.apps for select
+-  using (status = 'published' or public.is_admin(auth.uid()));
++  using (
++    status = 'published'
++    or public.is_admin(auth.uid())
++    or (status = 'pending' and created_by = auth.uid())
++  );
+ 
+ drop policy if exists "Admins manage apps" on public.apps;
+ create policy "Admins manage apps" on public.apps for all
+   using (public.is_admin(auth.uid()))
+   with check (public.is_admin(auth.uid()));
+ 
++-- Any signed-in user can submit an app for review — but only as 'pending'
++-- and only attributed to themselves; they cannot self-publish or post as
++-- someone else. Admins approve/reject from /admin/submissions.
++drop policy if exists "Signed-in users can submit apps for review" on public.apps;
++create policy "Signed-in users can submit apps for review"
++  on public.apps for insert
++  with check (auth.uid() = created_by and status = 'pending');
++
+ create index if not exists apps_category_idx on public.apps (category_id);
+ create index if not exists apps_status_idx on public.apps (status);
+ 
+@@ -347,6 +359,18 @@ create policy "Admins can delete app assets"
+   on storage.objects for delete
+   using (bucket_id = 'app-assets' and public.is_admin(auth.uid()));
+ 
++-- Any signed-in user can upload an icon/screenshot for an app they're
++-- submitting via /submit — scoped to its own subfolder so this doesn't
++-- widen who can write into the admin's regular icons/screenshots paths.
++drop policy if exists "Users can upload submission assets" on storage.objects;
++create policy "Users can upload submission assets"
++  on storage.objects for insert
++  with check (
++    bucket_id = 'app-assets'
++    and (storage.foldername(name))[1] = 'submissions'
++    and auth.uid() is not null
++  );
++
+ -- Any signed-in user may upload/replace/remove their OWN avatar, kept in
+ -- its own subfolder (avatars/<user id>/...) so this stays scoped to just
+ -- their own file and doesn't need admin rights like the policies above.

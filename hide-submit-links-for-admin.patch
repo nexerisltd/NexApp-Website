@@ -1,0 +1,62 @@
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index 12e5fb3..ec2fa6b 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -154,12 +154,12 @@ export default function Navbar() {
+                   My Downloads
+                 </Link>
+               )}
+-              {user && (
++              {user && !isAdmin && (
+                 <Link href="/submit" className="hover:text-text">
+                   Submit an app
+                 </Link>
+               )}
+-              {user && (
++              {user && !isAdmin && (
+                 <Link href="/dashboard" className="hover:text-text">
+                   Developer Dashboard
+                 </Link>
+diff --git a/src/components/UserMenu.tsx b/src/components/UserMenu.tsx
+index 8eb0a34..b5557ee 100644
+--- a/src/components/UserMenu.tsx
++++ b/src/components/UserMenu.tsx
+@@ -116,20 +116,24 @@ export default function UserMenu({ user, isAdmin }: { user: User; isAdmin: boole
+                 >
+                   <LayoutDashboard size={14} className="text-text-muted" /> My Downloads
+                 </Link>
+-                <Link
+-                  href="/submit"
+-                  onClick={() => setOpen(false)}
+-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
+-                >
+-                  <UploadCloud size={14} className="text-text-muted" /> Submit an app
+-                </Link>
+-                <Link
+-                  href="/dashboard"
+-                  onClick={() => setOpen(false)}
+-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
+-                >
+-                  <LayoutList size={14} className="text-text-muted" /> Developer Dashboard
+-                </Link>
++                {!isAdmin && (
++                  <>
++                    <Link
++                      href="/submit"
++                      onClick={() => setOpen(false)}
++                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
++                    >
++                      <UploadCloud size={14} className="text-text-muted" /> Submit an app
++                    </Link>
++                    <Link
++                      href="/dashboard"
++                      onClick={() => setOpen(false)}
++                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
++                    >
++                      <LayoutList size={14} className="text-text-muted" /> Developer Dashboard
++                    </Link>
++                  </>
++                )}
+                 {isAdmin && (
+                   <Link
+                     href="/admin"

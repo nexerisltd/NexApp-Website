@@ -1,0 +1,433 @@
+diff --git a/src/app/favorites/page.tsx b/src/app/favorites/page.tsx
+index 03ce432..f6a1388 100644
+--- a/src/app/favorites/page.tsx
++++ b/src/app/favorites/page.tsx
+@@ -32,7 +32,7 @@ export default async function FavoritesPage() {
+         {apps.length > 0 ? (
+           <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+             {apps.map((app) => (
+-              <AppCard key={app.id} app={app} userId={user.id} initialFavorited />
++              <AppCard key={app.id} app={app} />
+             ))}
+           </AnimatedGrid>
+         ) : (
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 72385da..5aa1974 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -4,6 +4,7 @@ import "./globals.css";
+ import Navbar from "@/components/Navbar";
+ import Footer from "@/components/Footer";
+ import Toaster from "@/components/Toaster";
++import { FavoritesProvider } from "@/lib/favorites-context";
+ 
+ const sora = Sora({
+   variable: "--font-display-face",
+@@ -52,10 +53,12 @@ export default function RootLayout({
+         className={`${sora.variable} ${inter.variable} ${jetbrainsMono.variable} antialiased bg-bg text-text min-h-screen flex flex-col`}
+         suppressHydrationWarning
+       >
+-        <Navbar />
+-        <main className="flex-1">{children}</main>
+-        <Footer />
+-        <Toaster />
++        <FavoritesProvider>
++          <Navbar />
++          <main className="flex-1">{children}</main>
++          <Footer />
++          <Toaster />
++        </FavoritesProvider>
+       </body>
+     </html>
+   );
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 8ad559e..7a3b38b 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,7 +1,8 @@
+ import { Suspense } from "react";
+ import Link from "next/link";
+ import { createPublicClient } from "@/lib/supabase/public";
+-import FavoritableAppGrid from "@/components/FavoritableAppGrid";
++import AppCard from "@/components/AppCard";
++import AnimatedGrid from "@/components/AnimatedGrid";
+ import HeroSection from "@/components/HeroSection";
+ import GoodbyeModal from "@/components/GoodbyeModal";
+ import type { App } from "@/lib/types";
+@@ -38,7 +39,11 @@ export default async function Home() {
+         </div>
+ 
+         {apps && apps.length > 0 ? (
+-          <FavoritableAppGrid apps={apps as App[]} />
++          <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
++            {(apps as App[]).map((app) => (
++              <AppCard key={app.id} app={app} />
++            ))}
++          </AnimatedGrid>
+         ) : (
+           <div className="glass-card rounded-2xl border border-dashed border-border p-10 text-center text-text-muted">
+             No apps published yet — check back soon, or head to{" "}
+diff --git a/src/app/shop/[slug]/page.tsx b/src/app/shop/[slug]/page.tsx
+index 6fb7d95..753991d 100644
+--- a/src/app/shop/[slug]/page.tsx
++++ b/src/app/shop/[slug]/page.tsx
+@@ -49,17 +49,6 @@ export default async function AppDetailPage({
+     data: { user },
+   } = await supabase.auth.getUser();
+ 
+-  let isFavorited = false;
+-  if (user) {
+-    const { data: fav } = await supabase
+-      .from("favorites")
+-      .select("id")
+-      .eq("app_id", typedApp.id)
+-      .eq("user_id", user.id)
+-      .maybeSingle();
+-    isFavorited = !!fav;
+-  }
+-
+   const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
+     year: "numeric",
+     month: "short",
+@@ -107,7 +96,7 @@ export default async function AppDetailPage({
+ 
+       <div className="mt-8 flex flex-wrap items-center gap-4">
+         <DownloadButton appId={typedApp.id} links={typedApp.platform_links} />
+-        <FavoriteButton appId={typedApp.id} userId={user?.id ?? null} initialFavorited={isFavorited} />
++        <FavoriteButton appId={typedApp.id} />
+         <div className="flex flex-wrap items-center gap-2 text-text-muted">
+           {typedApp.platform_links.map((link) => (
+             <span
+diff --git a/src/components/AppCard.tsx b/src/components/AppCard.tsx
+index 3ad6d5b..0f21a8c 100644
+--- a/src/components/AppCard.tsx
++++ b/src/components/AppCard.tsx
+@@ -7,15 +7,7 @@ import { Download, LayoutGrid, Star } from "lucide-react";
+ import FavoriteButton from "@/components/FavoriteButton";
+ import type { App } from "@/lib/types";
+ 
+-export default function AppCard({
+-  app,
+-  userId = null,
+-  initialFavorited = false,
+-}: {
+-  app: App;
+-  userId?: string | null;
+-  initialFavorited?: boolean;
+-}) {
++export default function AppCard({ app }: { app: App }) {
+   return (
+     <motion.div
+       whileHover={{ y: -4 }}
+@@ -23,12 +15,7 @@ export default function AppCard({
+       className="relative"
+     >
+       <div className="absolute right-3 top-3 z-10">
+-        <FavoriteButton
+-          appId={app.id}
+-          userId={userId}
+-          initialFavorited={initialFavorited}
+-          variant="icon"
+-        />
++        <FavoriteButton appId={app.id} variant="icon" />
+       </div>
+       <Link
+         href={`/shop/${app.slug}`}
+diff --git a/src/components/FavoritableAppGrid.tsx b/src/components/FavoritableAppGrid.tsx
+deleted file mode 100644
+index 73b2aa0..0000000
+--- a/src/components/FavoritableAppGrid.tsx
++++ /dev/null
+@@ -1,49 +0,0 @@
+-"use client";
+-
+-import { useEffect, useState } from "react";
+-import { createClient } from "@/lib/supabase/client";
+-import AppCard from "@/components/AppCard";
+-import AnimatedGrid from "@/components/AnimatedGrid";
+-import type { App } from "@/lib/types";
+-
+-export default function FavoritableAppGrid({ apps }: { apps: App[] }) {
+-  const [userId, setUserId] = useState<string | null>(null);
+-  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+-
+-  useEffect(() => {
+-    let mounted = true;
+-    const supabase = createClient();
+-
+-    supabase.auth.getUser().then(async ({ data }) => {
+-      if (!mounted || !data.user) return;
+-      setUserId(data.user.id);
+-
+-      // One query for every card on the page, not one per card.
+-      const { data: favs } = await supabase
+-        .from("favorites")
+-        .select("app_id")
+-        .eq("user_id", data.user.id);
+-
+-      if (mounted && favs) {
+-        setFavoritedIds(new Set(favs.map((f) => f.app_id)));
+-      }
+-    });
+-
+-    return () => {
+-      mounted = false;
+-    };
+-  }, []);
+-
+-  return (
+-    <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+-      {apps.map((app) => (
+-        <AppCard
+-          key={app.id}
+-          app={app}
+-          userId={userId}
+-          initialFavorited={favoritedIds.has(app.id)}
+-        />
+-      ))}
+-    </AnimatedGrid>
+-  );
+-}
+diff --git a/src/components/FavoriteButton.tsx b/src/components/FavoriteButton.tsx
+index ac86cda..ed5bc14 100644
+--- a/src/components/FavoriteButton.tsx
++++ b/src/components/FavoriteButton.tsx
+@@ -2,65 +2,35 @@
+ 
+ import { useState } from "react";
+ import { Heart, Loader2 } from "lucide-react";
+-import { createClient } from "@/lib/supabase/client";
++import { useFavorites } from "@/lib/favorites-context";
+ import { toast } from "@/lib/toast";
+ 
+ export default function FavoriteButton({
+   appId,
+-  userId,
+-  initialFavorited,
+   variant = "default",
+ }: {
+   appId: string;
+-  // Passed down from a server component (page.tsx already fetches the user
+-  // once per request) instead of fetching auth.getUser() here — doing it
+-  // per-button meant one extra network round trip PER app card on the
+-  // shop/home grid, which was the main cause of slow navigation.
+-  userId: string | null;
+-  initialFavorited: boolean;
+   // "default": full pill button with label (app detail page).
+   // "icon": compact circular icon-only button (card overlay).
+   variant?: "default" | "icon";
+ }) {
+-  const [favorited, setFavorited] = useState(initialFavorited);
++  const { isFavorited, toggleFavorite } = useFavorites();
++  const favorited = isFavorited(appId);
+   const [pending, setPending] = useState(false);
+ 
+   async function toggle(e: React.MouseEvent) {
+     e.preventDefault();
+     e.stopPropagation();
+ 
+-    if (!userId) {
+-      toast("Sign in to save apps to your favorites", "error");
+-      return;
+-    }
+-
+     setPending(true);
+-    const supabase = createClient();
++    const { error } = await toggleFavorite(appId);
++    setPending(false);
+ 
+-    if (favorited) {
+-      const { error } = await supabase
+-        .from("favorites")
+-        .delete()
+-        .eq("app_id", appId)
+-        .eq("user_id", userId);
+-      if (error) {
+-        toast(error.message, "error");
+-      } else {
+-        setFavorited(false);
+-        toast("Removed from favorites", "success");
+-      }
++    if (error) {
++      toast(error, "error");
+     } else {
+-      const { error } = await supabase
+-        .from("favorites")
+-        .insert({ app_id: appId, user_id: userId });
+-      if (error) {
+-        toast(error.message, "error");
+-      } else {
+-        setFavorited(true);
+-        toast("Added to favorites", "success");
+-      }
++      toast(favorited ? "Removed from favorites" : "Added to favorites", "success");
+     }
+-    setPending(false);
+   }
+ 
+   if (variant === "icon") {
+diff --git a/src/components/ShopBrowser.tsx b/src/components/ShopBrowser.tsx
+index f02e5a9..1927b89 100644
+--- a/src/components/ShopBrowser.tsx
++++ b/src/components/ShopBrowser.tsx
+@@ -29,9 +29,6 @@ export default function ShopBrowser({
+   const [isSearching, setIsSearching] = useState(false);
+   const [, startTransition] = useTransition();
+ 
+-  const [userId, setUserId] = useState<string | null>(null);
+-  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+-
+   const supabaseRef = useRef(createClient());
+   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const requestIdRef = useRef(0);
+@@ -40,23 +37,8 @@ export default function ShopBrowser({
+   // filter the full list client-side, since the server no longer does it.
+   const isFirstRun = useRef(true);
+ 
+-  // Resolve the current user + their favorited app ids once per page load,
+-  // not once per card (see FavoritableAppGrid for the same pattern).
+-  useEffect(() => {
+-    let mounted = true;
+-    supabaseRef.current.auth.getUser().then(async ({ data }) => {
+-      if (!mounted || !data.user) return;
+-      setUserId(data.user.id);
+-      const { data: favs } = await supabaseRef.current
+-        .from("favorites")
+-        .select("app_id")
+-        .eq("user_id", data.user.id);
+-      if (mounted && favs) setFavoritedIds(new Set(favs.map((f) => f.app_id)));
+-    });
+-    return () => {
+-      mounted = false;
+-    };
+-  }, []);
++  // Favorited state is resolved by the global FavoritesProvider (see
++  // lib/favorites-context.tsx) — no per-page fetch needed here anymore.
+ 
+   useEffect(() => {
+     if (isFirstRun.current) {
+@@ -161,12 +143,7 @@ export default function ShopBrowser({
+         {apps.length > 0 ? (
+           <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+             {apps.map((app) => (
+-              <AppCard
+-                key={app.id}
+-                app={app}
+-                userId={userId}
+-                initialFavorited={favoritedIds.has(app.id)}
+-              />
++              <AppCard key={app.id} app={app} />
+             ))}
+           </AnimatedGrid>
+         ) : (
+diff --git a/src/lib/favorites-context.tsx b/src/lib/favorites-context.tsx
+new file mode 100644
+index 0000000..7002499
+--- /dev/null
++++ b/src/lib/favorites-context.tsx
+@@ -0,0 +1,105 @@
++"use client";
++
++import {
++  createContext,
++  useCallback,
++  useContext,
++  useEffect,
++  useMemo,
++  useState,
++} from "react";
++import { createClient } from "@/lib/supabase/client";
++
++type FavoritesContextValue = {
++  userId: string | null;
++  isFavorited: (appId: string) => boolean;
++  toggleFavorite: (appId: string) => Promise<{ error: string | null }>;
++};
++
++const FavoritesContext = createContext<FavoritesContextValue | null>(null);
++
++export function FavoritesProvider({ children }: { children: React.ReactNode }) {
++  const [userId, setUserId] = useState<string | null>(null);
++  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
++
++  useEffect(() => {
++    const supabase = createClient();
++    let mounted = true;
++
++    async function loadFavorites(uid: string) {
++      const { data } = await supabase.from("favorites").select("app_id").eq("user_id", uid);
++      if (mounted) setFavoritedIds(new Set((data ?? []).map((f) => f.app_id)));
++    }
++
++    supabase.auth.getUser().then(({ data }) => {
++      if (!mounted) return;
++      setUserId(data.user?.id ?? null);
++      if (data.user) loadFavorites(data.user.id);
++    });
++
++    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
++      if (!mounted) return;
++      const uid = session?.user?.id ?? null;
++      setUserId(uid);
++      if (uid) {
++        loadFavorites(uid);
++      } else {
++        setFavoritedIds(new Set());
++      }
++    });
++
++    return () => {
++      mounted = false;
++      listener.subscription.unsubscribe();
++    };
++  }, []);
++
++  const isFavorited = useCallback((appId: string) => favoritedIds.has(appId), [favoritedIds]);
++
++  const toggleFavorite = useCallback(
++    async (appId: string) => {
++      if (!userId) {
++        return { error: "Sign in to save apps to your favorites" };
++      }
++      const supabase = createClient();
++      const alreadyFavorited = favoritedIds.has(appId);
++
++      if (alreadyFavorited) {
++        const { error } = await supabase
++          .from("favorites")
++          .delete()
++          .eq("app_id", appId)
++          .eq("user_id", userId);
++        if (error) return { error: error.message };
++        setFavoritedIds((prev) => {
++          const next = new Set(prev);
++          next.delete(appId);
++          return next;
++        });
++      } else {
++        const { error } = await supabase
++          .from("favorites")
++          .insert({ app_id: appId, user_id: userId });
++        if (error) return { error: error.message };
++        setFavoritedIds((prev) => new Set(prev).add(appId));
++      }
++      return { error: null };
++    },
++    [userId, favoritedIds]
++  );
++
++  const value = useMemo(
++    () => ({ userId, isFavorited, toggleFavorite }),
++    [userId, isFavorited, toggleFavorite]
++  );
++
++  return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
++}
++
++export function useFavorites() {
++  const ctx = useContext(FavoritesContext);
++  if (!ctx) {
++    throw new Error("useFavorites must be used within a FavoritesProvider");
++  }
++  return ctx;
++}

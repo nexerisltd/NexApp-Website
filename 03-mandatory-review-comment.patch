@@ -1,0 +1,47 @@
+diff --git a/src/app/shop/[slug]/reviews-actions.ts b/src/app/shop/[slug]/reviews-actions.ts
+index 9f9b309..336bf2e 100644
+--- a/src/app/shop/[slug]/reviews-actions.ts
++++ b/src/app/shop/[slug]/reviews-actions.ts
+@@ -25,13 +25,16 @@ export async function submitReview({
+   if (rating < 1 || rating > 5) {
+     return { error: "Pick a rating between 1 and 5 stars." };
+   }
++  if (!comment.trim()) {
++    return { error: "Please add a short comment with your rating." };
++  }
+ 
+   const { error } = await supabase.from("reviews").upsert(
+     {
+       app_id: appId,
+       user_id: user.id,
+       rating,
+-      comment: comment.trim() || null,
++      comment: comment.trim(),
+     },
+     { onConflict: "app_id,user_id" }
+   );
+diff --git a/src/components/ReviewsSection.tsx b/src/components/ReviewsSection.tsx
+index d3025df..5c55dc6 100644
+--- a/src/components/ReviewsSection.tsx
++++ b/src/components/ReviewsSection.tsx
+@@ -34,6 +34,10 @@ export default function ReviewsSection({
+       toast("Select a star rating first", "error");
+       return;
+     }
++    if (!comment.trim()) {
++      toast("Add a short comment with your rating", "error");
++      return;
++    }
+     startTransition(async () => {
+       const { error } = await submitReview({ appId, slug, rating, comment });
+       if (error) {
+@@ -82,7 +86,8 @@ export default function ReviewsSection({
+           <textarea
+             value={comment}
+             onChange={(e) => setComment(e.target.value)}
+-            placeholder="Share your experience with this app (optional)"
++            placeholder="Share your experience with this app"
++            required
+             rows={3}
+             maxLength={1000}
+             className="mt-3 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-text-muted"

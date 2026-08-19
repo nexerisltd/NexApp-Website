@@ -1,0 +1,247 @@
+diff --git a/src/app/profile/actions.ts b/src/app/profile/actions.ts
+index dfd2bdc..fb2e8ec 100644
+--- a/src/app/profile/actions.ts
++++ b/src/app/profile/actions.ts
+@@ -1,8 +1,12 @@
+ "use server";
+ 
++import { randomUUID } from "crypto";
++import { revalidatePath } from "next/cache";
+ import { redirect } from "next/navigation";
+ import { createClient } from "@/lib/supabase/server";
+ 
++const ASSET_BUCKET = "app-assets";
++
+ export async function deleteAccount() {
+   const supabase = await createClient();
+ 
+@@ -14,3 +18,47 @@ export async function deleteAccount() {
+   await supabase.auth.signOut();
+   redirect("/?goodbye=1");
+ }
++
++export async function updateProfile(formData: FormData) {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
++  if (!user) redirect("/login");
++
++  const fullName = (formData.get("full_name") as string | null)?.trim() || null;
++  const existingAvatarUrl = (formData.get("existing_avatar_url") as string | null) || null;
++  const avatarFile = formData.get("avatar_file") as File | null;
++
++  let avatarUrl = existingAvatarUrl;
++
++  if (avatarFile && avatarFile.size > 0) {
++    const ext = avatarFile.name.split(".").pop()?.toLowerCase() || "png";
++    const path = `avatars/${user.id}/${randomUUID()}.${ext}`;
++
++    const { error: uploadError } = await supabase.storage
++      .from(ASSET_BUCKET)
++      .upload(path, avatarFile, { contentType: avatarFile.type, upsert: true });
++
++    if (uploadError) {
++      redirect(`/profile?error=${encodeURIComponent(uploadError.message)}`);
++    }
++
++    const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
++    avatarUrl = data.publicUrl;
++  }
++
++  const { error } = await supabase
++    .from("profiles")
++    .update({ full_name: fullName, avatar_url: avatarUrl })
++    .eq("id", user.id);
++
++  if (error) {
++    redirect(`/profile?error=${encodeURIComponent(error.message)}`);
++  }
++
++  revalidatePath("/profile");
++  revalidatePath(`/developers/${user.id}`);
++  redirect("/profile?saved=1");
++}
+diff --git a/src/app/profile/page.tsx b/src/app/profile/page.tsx
+index d202f79..8bd8311 100644
+--- a/src/app/profile/page.tsx
++++ b/src/app/profile/page.tsx
+@@ -4,13 +4,14 @@ import LogoutButton from "@/components/LogoutButton";
+ import AddAccountButton from "@/components/AddAccountButton";
+ import DeleteAccountButton from "@/components/DeleteAccountButton";
+ import FeedbackToast from "@/components/FeedbackToast";
++import ProfileEditForm from "@/components/ProfileEditForm";
+ 
+ export default async function ProfilePage({
+   searchParams,
+ }: {
+-  searchParams: Promise<{ error?: string }>;
++  searchParams: Promise<{ error?: string; saved?: string }>;
+ }) {
+-  const { error } = await searchParams;
++  const { error, saved } = await searchParams;
+   const supabase = await createClient();
+   const {
+     data: { user },
+@@ -18,13 +19,31 @@ export default async function ProfilePage({
+ 
+   if (!user) redirect("/login");
+ 
+-  const name = (user.user_metadata?.full_name as string | undefined) ?? "Account";
+-  const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
++  const { data: profile } = await supabase
++    .from("profiles")
++    .select("full_name, avatar_url")
++    .eq("id", user.id)
++    .maybeSingle();
++
++  // The signup trigger seeds profiles.full_name/avatar_url from OAuth
++  // metadata, but fall back to user_metadata just in case that row is
++  // somehow missing (e.g. an account created before that trigger existed).
++  const name =
++    profile?.full_name ??
++    (user.user_metadata?.full_name as string | undefined) ??
++    "Account";
++  const avatarUrl =
++    profile?.avatar_url ?? (user.user_metadata?.avatar_url as string | undefined) ?? null;
+   const initial = name.charAt(0).toUpperCase();
+ 
+   return (
+     <div className="mx-auto max-w-lg px-6 py-14">
+-      <FeedbackToast error={error} redirectTo="/profile" />
++      <FeedbackToast
++        error={error}
++        saved={saved === "1"}
++        successMessage="Profile updated"
++        redirectTo="/profile"
++      />
+ 
+       <div className="neu-raised rounded-3xl p-8 text-center">
+         <span className="neu-pressed mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-full text-2xl">
+@@ -39,6 +58,8 @@ export default async function ProfilePage({
+         <p className="mt-1 text-sm text-text-muted">{user.email}</p>
+       </div>
+ 
++      <ProfileEditForm fullName={profile?.full_name ?? ""} avatarUrl={avatarUrl} />
++
+       <div className="mt-8 flex flex-col gap-3">
+         <p className="font-mono text-xs uppercase tracking-wide text-text-muted">
+           Accounts
+diff --git a/src/components/ProfileEditForm.tsx b/src/components/ProfileEditForm.tsx
+new file mode 100644
+index 0000000..88ffba4
+--- /dev/null
++++ b/src/components/ProfileEditForm.tsx
+@@ -0,0 +1,70 @@
++"use client";
++
++import { useState } from "react";
++import { ImagePlus, Loader2 } from "lucide-react";
++import { updateProfile } from "@/app/profile/actions";
++
++export default function ProfileEditForm({
++  fullName,
++  avatarUrl,
++}: {
++  fullName: string;
++  avatarUrl: string | null;
++}) {
++  const [preview, setPreview] = useState<string | null>(avatarUrl);
++  const [pending, setPending] = useState(false);
++
++  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0];
++    if (file) setPreview(URL.createObjectURL(file));
++  }
++
++  return (
++    <form
++      action={updateProfile}
++      onSubmit={() => setPending(true)}
++      className="mt-8 flex flex-col gap-4"
++    >
++      <p className="font-mono text-xs uppercase tracking-wide text-text-muted">
++        Public developer profile
++      </p>
++
++      <div className="flex items-center gap-4">
++        <div className="glass-card aurora-border flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full">
++          {preview ? (
++            // eslint-disable-next-line @next/next/no-img-element
++            <img src={preview} alt="" className="h-full w-full object-cover" />
++          ) : (
++            <ImagePlus size={20} className="text-text-muted" />
++          )}
++        </div>
++        <input type="hidden" name="existing_avatar_url" value={avatarUrl ?? ""} />
++        <input
++          type="file"
++          name="avatar_file"
++          accept="image/png,image/jpeg"
++          onChange={handleAvatarChange}
++          className="aurora-border glass-card min-w-0 flex-1 rounded-xl px-4 py-2.5 text-sm outline-none file:mr-3 file:rounded-full file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-text"
++        />
++      </div>
++
++      <input
++        type="text"
++        name="full_name"
++        defaultValue={fullName}
++        placeholder="Your name (shown on your published apps)"
++        maxLength={80}
++        className="glass-card aurora-border w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-text-muted"
++      />
++
++      <button
++        type="submit"
++        disabled={pending}
++        className="flex items-center justify-center gap-2 self-start rounded-full neu-raised px-5 py-2.5 text-xs font-medium text-accent transition-transform hover:scale-[1.03] disabled:opacity-60"
++      >
++        {pending && <Loader2 size={13} className="animate-spin" />}
++        Save profile
++      </button>
++    </form>
++  );
++}
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index aebaaf4..b766008 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -347,6 +347,36 @@ create policy "Admins can delete app assets"
+   on storage.objects for delete
+   using (bucket_id = 'app-assets' and public.is_admin(auth.uid()));
+ 
++-- Any signed-in user may upload/replace/remove their OWN avatar, kept in
++-- its own subfolder (avatars/<user id>/...) so this stays scoped to just
++-- their own file and doesn't need admin rights like the policies above.
++drop policy if exists "Users can upload their own avatar" on storage.objects;
++create policy "Users can upload their own avatar"
++  on storage.objects for insert
++  with check (
++    bucket_id = 'app-assets'
++    and (storage.foldername(name))[1] = 'avatars'
++    and (storage.foldername(name))[2] = auth.uid()::text
++  );
++
++drop policy if exists "Users can replace their own avatar" on storage.objects;
++create policy "Users can replace their own avatar"
++  on storage.objects for update
++  using (
++    bucket_id = 'app-assets'
++    and (storage.foldername(name))[1] = 'avatars'
++    and (storage.foldername(name))[2] = auth.uid()::text
++  );
++
++drop policy if exists "Users can delete their own avatar" on storage.objects;
++create policy "Users can delete their own avatar"
++  on storage.objects for delete
++  using (
++    bucket_id = 'app-assets'
++    and (storage.foldername(name))[1] = 'avatars'
++    and (storage.foldername(name))[2] = auth.uid()::text
++  );
++
+ -- ============================================================
+ -- To make yourself an admin after signing up once, run:
+ --   update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@gmail.com');

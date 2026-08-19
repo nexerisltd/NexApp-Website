@@ -1,0 +1,302 @@
+diff --git a/src/app/favorites/page.tsx b/src/app/favorites/page.tsx
+new file mode 100644
+index 0000000..863d15a
+--- /dev/null
++++ b/src/app/favorites/page.tsx
+@@ -0,0 +1,50 @@
++import { redirect } from "next/navigation";
++import Link from "next/link";
++import { createClient } from "@/lib/supabase/server";
++import AppCard from "@/components/AppCard";
++import AnimatedGrid from "@/components/AnimatedGrid";
++import type { App } from "@/lib/types";
++
++export default async function FavoritesPage() {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
++  if (!user) redirect("/login");
++
++  const { data: favorites } = await supabase
++    .from("favorites")
++    .select("apps(*, categories(id, name, slug))")
++    .eq("user_id", user.id)
++    .order("created_at", { ascending: false });
++
++  const apps = (favorites ?? [])
++    .map((f) => (Array.isArray(f.apps) ? f.apps[0] : f.apps))
++    .filter((a): a is App => !!a);
++
++  return (
++    <div className="mx-auto max-w-6xl px-6 py-14">
++      <h1 className="font-display text-2xl font-bold">Your favorites</h1>
++      <p className="mt-1 text-sm text-text-muted">{user.email}</p>
++
++      <div className="mt-10">
++        {apps.length > 0 ? (
++          <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
++            {apps.map((app) => (
++              <AppCard key={app.id} app={app} initialFavorited />
++            ))}
++          </AnimatedGrid>
++        ) : (
++          <div className="glass-card rounded-2xl border border-dashed border-border p-10 text-center text-text-muted">
++            You haven&apos;t favorited any apps yet.{" "}
++            <Link href="/shop" className="underline underline-offset-4">
++              Browse apps
++            </Link>
++            .
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/shop/[slug]/page.tsx b/src/app/shop/[slug]/page.tsx
+index 6ac12fb..dd69d9b 100644
+--- a/src/app/shop/[slug]/page.tsx
++++ b/src/app/shop/[slug]/page.tsx
+@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
+ import { LayoutGrid, GitBranch } from "lucide-react";
+ import { createClient } from "@/lib/supabase/server";
+ import DownloadButton from "@/components/DownloadButton";
++import FavoriteButton from "@/components/FavoriteButton";
+ import ScreenshotGallery from "@/components/ScreenshotGallery";
+ import CopyableId from "@/components/CopyableId";
+ import StarRating from "@/components/StarRating";
+@@ -48,6 +49,17 @@ export default async function AppDetailPage({
+     data: { user },
+   } = await supabase.auth.getUser();
+ 
++  let isFavorited = false;
++  if (user) {
++    const { data: fav } = await supabase
++      .from("favorites")
++      .select("id")
++      .eq("app_id", typedApp.id)
++      .eq("user_id", user.id)
++      .maybeSingle();
++    isFavorited = !!fav;
++  }
++
+   const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
+     year: "numeric",
+     month: "short",
+@@ -95,6 +107,7 @@ export default async function AppDetailPage({
+ 
+       <div className="mt-8 flex flex-wrap items-center gap-4">
+         <DownloadButton appId={typedApp.id} links={typedApp.platform_links} />
++        <FavoriteButton appId={typedApp.id} initialFavorited={isFavorited} />
+         <div className="flex flex-wrap items-center gap-2 text-text-muted">
+           {typedApp.platform_links.map((link) => (
+             <span
+diff --git a/src/components/AppCard.tsx b/src/components/AppCard.tsx
+index 742be37..5d36019 100644
+--- a/src/components/AppCard.tsx
++++ b/src/components/AppCard.tsx
+@@ -4,14 +4,25 @@ import Link from "next/link";
+ import Image from "next/image";
+ import { motion } from "framer-motion";
+ import { Download, LayoutGrid, Star } from "lucide-react";
++import FavoriteButton from "@/components/FavoriteButton";
+ import type { App } from "@/lib/types";
+ 
+-export default function AppCard({ app }: { app: App }) {
++export default function AppCard({
++  app,
++  initialFavorited = false,
++}: {
++  app: App;
++  initialFavorited?: boolean;
++}) {
+   return (
+     <motion.div
+       whileHover={{ y: -4 }}
+       transition={{ type: "spring", stiffness: 300, damping: 22 }}
++      className="relative"
+     >
++      <div className="absolute right-3 top-3 z-10">
++        <FavoriteButton appId={app.id} initialFavorited={initialFavorited} variant="icon" />
++      </div>
+       <Link
+         href={`/shop/${app.slug}`}
+         className="group glass-card aurora-border aurora-glow flex h-full flex-col items-center gap-3 rounded-2xl p-6 text-center"
+diff --git a/src/components/FavoriteButton.tsx b/src/components/FavoriteButton.tsx
+new file mode 100644
+index 0000000..fbf0e6b
+--- /dev/null
++++ b/src/components/FavoriteButton.tsx
+@@ -0,0 +1,100 @@
++"use client";
++
++import { useEffect, useState } from "react";
++import { Heart, Loader2 } from "lucide-react";
++import { createClient } from "@/lib/supabase/client";
++import { toast } from "@/lib/toast";
++
++export default function FavoriteButton({
++  appId,
++  initialFavorited,
++  variant = "default",
++}: {
++  appId: string;
++  initialFavorited: boolean;
++  // "default": full pill button with label (app detail page).
++  // "icon": compact circular icon-only button (card overlay).
++  variant?: "default" | "icon";
++}) {
++  const [favorited, setFavorited] = useState(initialFavorited);
++  const [pending, setPending] = useState(false);
++  const [userId, setUserId] = useState<string | null>(null);
++
++  useEffect(() => {
++    const supabase = createClient();
++    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
++  }, []);
++
++  async function toggle(e: React.MouseEvent) {
++    e.preventDefault();
++    e.stopPropagation();
++
++    if (!userId) {
++      toast("Sign in to save apps to your favorites", "error");
++      return;
++    }
++
++    setPending(true);
++    const supabase = createClient();
++
++    if (favorited) {
++      const { error } = await supabase
++        .from("favorites")
++        .delete()
++        .eq("app_id", appId)
++        .eq("user_id", userId);
++      if (error) {
++        toast(error.message, "error");
++      } else {
++        setFavorited(false);
++        toast("Removed from favorites", "success");
++      }
++    } else {
++      const { error } = await supabase
++        .from("favorites")
++        .insert({ app_id: appId, user_id: userId });
++      if (error) {
++        toast(error.message, "error");
++      } else {
++        setFavorited(true);
++        toast("Added to favorites", "success");
++      }
++    }
++    setPending(false);
++  }
++
++  if (variant === "icon") {
++    return (
++      <button
++        onClick={toggle}
++        disabled={pending}
++        aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
++        className="glass-card flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-110 disabled:opacity-60"
++      >
++        {pending ? (
++          <Loader2 size={14} className="animate-spin" />
++        ) : (
++          <Heart
++            size={14}
++            className={favorited ? "fill-accent text-accent" : "text-text-muted"}
++          />
++        )}
++      </button>
++    );
++  }
++
++  return (
++    <button
++      onClick={toggle}
++      disabled={pending}
++      className="glass-card aurora-border flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-transform hover:scale-[1.03] disabled:opacity-60"
++    >
++      {pending ? (
++        <Loader2 size={14} className="animate-spin" />
++      ) : (
++        <Heart size={14} className={favorited ? "fill-accent text-accent" : ""} />
++      )}
++      {favorited ? "Favorited" : "Add to favorites"}
++    </button>
++  );
++}
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index 897d21d..00f22b3 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -138,6 +138,11 @@ export default function Navbar() {
+                   Admin
+                 </Link>
+               )}
++              {user && (
++                <Link href="/favorites" className="hover:text-text">
++                  My Favorites
++                </Link>
++              )}
+               {user && (
+                 <Link href="/downloads" className="hover:text-text">
+                   My Downloads
+diff --git a/src/components/UserMenu.tsx b/src/components/UserMenu.tsx
+index 628e2e3..ad2e63d 100644
+--- a/src/components/UserMenu.tsx
++++ b/src/components/UserMenu.tsx
+@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
+ import { createPortal } from "react-dom";
+ import Link from "next/link";
+ import { AnimatePresence, motion } from "framer-motion";
+-import { ChevronDown, LayoutDashboard, Shield, User as UserIcon } from "lucide-react";
++import { ChevronDown, Heart, LayoutDashboard, Shield, User as UserIcon } from "lucide-react";
+ import type { User } from "@supabase/supabase-js";
+ import LogoutButton from "@/components/LogoutButton";
+ 
+@@ -102,6 +102,13 @@ export default function UserMenu({ user, isAdmin }: { user: User; isAdmin: boole
+                 >
+                   <UserIcon size={14} className="text-text-muted" /> Profile
+                 </Link>
++                <Link
++                  href="/favorites"
++                  onClick={() => setOpen(false)}
++                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
++                >
++                  <Heart size={14} className="text-text-muted" /> Favorites
++                </Link>
+                 <Link
+                   href="/downloads"
+                   onClick={() => setOpen(false)}
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index 977b91a..68d511e 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -266,6 +266,23 @@ create trigger on_review_changed
+   for each row execute procedure public.refresh_app_rating();
+ 
+ 
++-- 4d. FAVORITES / WISHLIST (a user saving an app for later) --------------
++create table if not exists public.favorites (
++  id uuid primary key default gen_random_uuid(),
++  app_id uuid not null references public.apps(id) on delete cascade,
++  user_id uuid not null references public.profiles(id) on delete cascade,
++  created_at timestamptz not null default now(),
++  unique (app_id, user_id)
++);
++
++alter table public.favorites enable row level security;
++
++drop policy if exists "Users manage their own favorites" on public.favorites;
++create policy "Users manage their own favorites"
++  on public.favorites for all
++  using (auth.uid() = user_id)
++  with check (auth.uid() = user_id);
++
+ -- 5. Keep apps.updated_at fresh (uses the touch_updated_at() function
+ --    defined above) ------------------------------------------------------
+ drop trigger if exists apps_touch_updated_at on public.apps;

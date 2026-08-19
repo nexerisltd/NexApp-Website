@@ -1,0 +1,227 @@
+diff --git a/src/app/favorites/page.tsx b/src/app/favorites/page.tsx
+index 863d15a..03ce432 100644
+--- a/src/app/favorites/page.tsx
++++ b/src/app/favorites/page.tsx
+@@ -32,7 +32,7 @@ export default async function FavoritesPage() {
+         {apps.length > 0 ? (
+           <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+             {apps.map((app) => (
+-              <AppCard key={app.id} app={app} initialFavorited />
++              <AppCard key={app.id} app={app} userId={user.id} initialFavorited />
+             ))}
+           </AnimatedGrid>
+         ) : (
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index b43b25e..61ecc5e 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -13,6 +13,10 @@ export default async function Home({
+ }) {
+   const { goodbye } = await searchParams;
+   const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
+   const { data: apps } = await supabase
+     .from("apps")
+     .select("*, categories(id, name, slug)")
+@@ -20,6 +24,15 @@ export default async function Home({
+     .order("downloads_count", { ascending: false })
+     .limit(6);
+ 
++  let favoritedIds = new Set<string>();
++  if (user) {
++    const { data: favs } = await supabase
++      .from("favorites")
++      .select("app_id")
++      .eq("user_id", user.id);
++    favoritedIds = new Set((favs ?? []).map((f) => f.app_id));
++  }
++
+   return (
+     <div>
+       <GoodbyeModal show={goodbye === "1"} />
+@@ -37,7 +50,12 @@ export default async function Home({
+         {apps && apps.length > 0 ? (
+           <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+             {(apps as App[]).map((app) => (
+-              <AppCard key={app.id} app={app} />
++              <AppCard
++                key={app.id}
++                app={app}
++                userId={user?.id ?? null}
++                initialFavorited={favoritedIds.has(app.id)}
++              />
+             ))}
+           </AnimatedGrid>
+         ) : (
+diff --git a/src/app/shop/[slug]/page.tsx b/src/app/shop/[slug]/page.tsx
+index dd69d9b..6fb7d95 100644
+--- a/src/app/shop/[slug]/page.tsx
++++ b/src/app/shop/[slug]/page.tsx
+@@ -107,7 +107,7 @@ export default async function AppDetailPage({
+ 
+       <div className="mt-8 flex flex-wrap items-center gap-4">
+         <DownloadButton appId={typedApp.id} links={typedApp.platform_links} />
+-        <FavoriteButton appId={typedApp.id} initialFavorited={isFavorited} />
++        <FavoriteButton appId={typedApp.id} userId={user?.id ?? null} initialFavorited={isFavorited} />
+         <div className="flex flex-wrap items-center gap-2 text-text-muted">
+           {typedApp.platform_links.map((link) => (
+             <span
+diff --git a/src/app/shop/page.tsx b/src/app/shop/page.tsx
+index 5ef9329..c437b55 100644
+--- a/src/app/shop/page.tsx
++++ b/src/app/shop/page.tsx
+@@ -9,6 +9,9 @@ export default async function AppsPage({
+ }) {
+   const { q, category } = await searchParams;
+   const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
+ 
+   const { data: categories } = await supabase
+     .from("categories")
+@@ -31,6 +34,15 @@ export default async function AppsPage({
+ 
+   const { data: apps } = await query;
+ 
++  let favoritedIds: string[] = [];
++  if (user) {
++    const { data: favs } = await supabase
++      .from("favorites")
++      .select("app_id")
++      .eq("user_id", user.id);
++    favoritedIds = (favs ?? []).map((f) => f.app_id);
++  }
++
+   return (
+     <div className="mx-auto max-w-6xl px-6 py-14">
+       <h1 className="text-center font-display text-4xl font-extrabold sm:text-5xl">
+@@ -45,6 +57,8 @@ export default async function AppsPage({
+         initialQuery={q ?? ""}
+         initialCategory={category ?? ""}
+         categories={(categories as Category[]) ?? []}
++        userId={user?.id ?? null}
++        favoritedIds={favoritedIds}
+       />
+     </div>
+   );
+diff --git a/src/components/AppCard.tsx b/src/components/AppCard.tsx
+index 5d36019..3ad6d5b 100644
+--- a/src/components/AppCard.tsx
++++ b/src/components/AppCard.tsx
+@@ -9,9 +9,11 @@ import type { App } from "@/lib/types";
+ 
+ export default function AppCard({
+   app,
++  userId = null,
+   initialFavorited = false,
+ }: {
+   app: App;
++  userId?: string | null;
+   initialFavorited?: boolean;
+ }) {
+   return (
+@@ -21,7 +23,12 @@ export default function AppCard({
+       className="relative"
+     >
+       <div className="absolute right-3 top-3 z-10">
+-        <FavoriteButton appId={app.id} initialFavorited={initialFavorited} variant="icon" />
++        <FavoriteButton
++          appId={app.id}
++          userId={userId}
++          initialFavorited={initialFavorited}
++          variant="icon"
++        />
+       </div>
+       <Link
+         href={`/shop/${app.slug}`}
+diff --git a/src/components/FavoriteButton.tsx b/src/components/FavoriteButton.tsx
+index fbf0e6b..ac86cda 100644
+--- a/src/components/FavoriteButton.tsx
++++ b/src/components/FavoriteButton.tsx
+@@ -1,16 +1,22 @@
+ "use client";
+ 
+-import { useEffect, useState } from "react";
++import { useState } from "react";
+ import { Heart, Loader2 } from "lucide-react";
+ import { createClient } from "@/lib/supabase/client";
+ import { toast } from "@/lib/toast";
+ 
+ export default function FavoriteButton({
+   appId,
++  userId,
+   initialFavorited,
+   variant = "default",
+ }: {
+   appId: string;
++  // Passed down from a server component (page.tsx already fetches the user
++  // once per request) instead of fetching auth.getUser() here — doing it
++  // per-button meant one extra network round trip PER app card on the
++  // shop/home grid, which was the main cause of slow navigation.
++  userId: string | null;
+   initialFavorited: boolean;
+   // "default": full pill button with label (app detail page).
+   // "icon": compact circular icon-only button (card overlay).
+@@ -18,12 +24,6 @@ export default function FavoriteButton({
+ }) {
+   const [favorited, setFavorited] = useState(initialFavorited);
+   const [pending, setPending] = useState(false);
+-  const [userId, setUserId] = useState<string | null>(null);
+-
+-  useEffect(() => {
+-    const supabase = createClient();
+-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+-  }, []);
+ 
+   async function toggle(e: React.MouseEvent) {
+     e.preventDefault();
+diff --git a/src/components/ShopBrowser.tsx b/src/components/ShopBrowser.tsx
+index 8aa0a73..cb1ed12 100644
+--- a/src/components/ShopBrowser.tsx
++++ b/src/components/ShopBrowser.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useEffect, useRef, useState, useTransition } from "react";
++import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+ import { useRouter } from "next/navigation";
+ import { Loader2, Search } from "lucide-react";
+ import { createClient } from "@/lib/supabase/client";
+@@ -13,12 +13,19 @@ export default function ShopBrowser({
+   initialQuery,
+   initialCategory,
+   categories,
++  userId,
++  favoritedIds,
+ }: {
+   initialApps: App[];
+   initialQuery: string;
+   initialCategory: string;
+   categories: Category[];
++  userId: string | null;
++  // Favorites don't change from searching/filtering, so this is fetched
++  // once server-side and reused for every re-search below.
++  favoritedIds: string[];
+ }) {
++  const favoritedSet = useMemo(() => new Set(favoritedIds), [favoritedIds]);
+   const router = useRouter();
+   const [query, setQuery] = useState(initialQuery);
+   const [category, setCategory] = useState(initialCategory);
+@@ -135,7 +142,12 @@ export default function ShopBrowser({
+         {apps.length > 0 ? (
+           <AnimatedGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+             {apps.map((app) => (
+-              <AppCard key={app.id} app={app} />
++              <AppCard
++                key={app.id}
++                app={app}
++                userId={userId}
++                initialFavorited={favoritedSet.has(app.id)}
++              />
+             ))}
+           </AnimatedGrid>
+         ) : (
