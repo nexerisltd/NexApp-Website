@@ -44,6 +44,7 @@ export type App = {
   created_at: string;
   updated_at: string;
   categories?: Category | null;
+  profiles?: { full_name: string | null; avatar_url: string | null } | null;
 };
 
 export type Review = {
