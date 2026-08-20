@@ -18,7 +18,7 @@ function slugify(name: string) {
 async function uploadAsset(
   supabase: Awaited<ReturnType<typeof createClient>>,
   file: File,
-  folder: "icons" | "screenshots"
+  folder: "icons" | "screenshots" | "covers"
 ) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const path = `${folder}/${randomUUID()}.${ext}`;
@@ -57,6 +57,14 @@ export async function saveApp(formData: FormData) {
     iconUrl = await uploadAsset(supabase, iconFile, "icons");
   }
 
+  // Cover: same pattern as the icon above — a newly uploaded file wins,
+  // otherwise keep whatever cover was already set (or none).
+  let coverUrl = (formData.get("existing_cover_url") as string) || null;
+  const coverFile = formData.get("cover_file") as File | null;
+  if (coverFile && coverFile.size > 0) {
+    coverUrl = await uploadAsset(supabase, coverFile, "covers");
+  }
+
   // Screenshots: keep existing ones (each tagged with a platform group) and
   // append any newly uploaded files, tagged with the group chosen for them.
   let screenshots: { url: string; group: string }[] = [];
@@ -89,6 +97,7 @@ export async function saveApp(formData: FormData) {
     description: formData.get("description") as string,
     category_id: (formData.get("category_id") as string) || null,
     icon_url: iconUrl,
+    cover_url: coverUrl,
     screenshots,
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string) || null,

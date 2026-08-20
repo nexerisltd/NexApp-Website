@@ -29,6 +29,9 @@ export type App = {
   description: string | null;
   category_id: string | null;
   icon_url: string | null;
+  // Wide cover image used as the background when this app is featured in a
+  // homepage hero billboard. Same aspect ratio as the billboard itself.
+  cover_url: string | null;
   screenshots: Screenshot[];
   version: string;
   size_label: string | null;
@@ -72,6 +75,23 @@ export type Source = {
   created_at: string;
   updated_at: string;
   apps?: { name: string; slug: string; icon_url: string | null } | null;
+};
+
+export type Billboard = {
+  id: string;
+  title: string;
+  app_id: string;
+  offer: string | null;
+  display_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  apps?: {
+    name: string;
+    slug: string;
+    icon_url: string | null;
+    cover_url: string | null;
+  } | null;
 };
 
 export type Notification = {

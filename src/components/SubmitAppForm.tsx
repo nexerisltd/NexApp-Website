@@ -1,6 +1,7 @@
 import { submitApp } from "@/app/submit/actions";
 import PlatformLinksEditor from "@/components/PlatformLinksEditor";
 import IconFileInput from "@/components/IconFileInput";
+import CoverFileInput from "@/components/CoverFileInput";
 import ScreenshotsFileInput from "@/components/ScreenshotsFileInput";
 import type { Category } from "@/lib/types";
 
@@ -99,6 +100,17 @@ export default function SubmitAppForm({ categories }: { categories: Category[] }
           App icon (PNG/JPEG)
         </label>
         <IconFileInput />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-mono text-text-muted">
+          App cover (PNG/JPEG)
+        </label>
+        <CoverFileInput />
+        <p className="mt-1.5 text-xs text-text-muted">
+          If your app gets featured on the homepage, this image becomes its billboard
+          background — an admin picks which apps get featured.
+        </p>
       </div>
 
       <div>

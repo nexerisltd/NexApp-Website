@@ -18,7 +18,7 @@ async function uploadSubmissionAsset(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   file: File,
-  folder: "icons" | "screenshots"
+  folder: "icons" | "screenshots" | "covers"
 ) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const path = `submissions/${userId}/${folder}/${randomUUID()}.${ext}`;
@@ -65,6 +65,12 @@ export async function submitApp(formData: FormData) {
     iconUrl = await uploadSubmissionAsset(supabase, user.id, iconFile, "icons");
   }
 
+  let coverUrl: string | null = null;
+  const coverFile = formData.get("cover_file") as File | null;
+  if (coverFile && coverFile.size > 0) {
+    coverUrl = await uploadSubmissionAsset(supabase, user.id, coverFile, "covers");
+  }
+
   const screenshots: { url: string; group: string }[] = [];
   let newGroups: string[] = [];
   try {
@@ -95,6 +101,7 @@ export async function submitApp(formData: FormData) {
     description: formData.get("description") as string,
     category_id: (formData.get("category_id") as string) || null,
     icon_url: iconUrl,
+    cover_url: coverUrl,
     screenshots,
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string) || null,

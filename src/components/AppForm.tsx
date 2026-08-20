@@ -1,6 +1,7 @@
 import { saveApp } from "@/app/admin/actions";
 import PlatformLinksEditor from "@/components/PlatformLinksEditor";
 import IconFileInput from "@/components/IconFileInput";
+import CoverFileInput from "@/components/CoverFileInput";
 import ScreenshotsFileInput from "@/components/ScreenshotsFileInput";
 import type { App, Category } from "@/lib/types";
 
@@ -145,6 +146,13 @@ export default function AppForm({
           App icon (PNG/JPEG)
         </label>
         <IconFileInput existingUrl={app?.icon_url} />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-mono text-text-muted">
+          App cover (PNG/JPEG)
+        </label>
+        <CoverFileInput existingUrl={app?.cover_url} />
       </div>
 
       <div>

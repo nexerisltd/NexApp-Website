@@ -1,12 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { createPublicClient } from "@/lib/supabase/public";
-import HeroBanner from "@/components/HeroBanner";
+import HeroBanner, { type BillboardSlide } from "@/components/HeroBanner";
 import FeaturedAppCard from "@/components/FeaturedAppCard";
 import TopCategoriesGrid from "@/components/TopCategoriesGrid";
 import TopAppsList from "@/components/TopAppsList";
 import GoodbyeModal from "@/components/GoodbyeModal";
-import type { App, Category } from "@/lib/types";
+import type { App, Billboard, Category } from "@/lib/types";
 
 // No cookies()/searchParams are read server-side on this page, so Next.js
 // can serve it from cache and only revalidate it in the background every
@@ -16,16 +16,34 @@ export const revalidate = 60;
 export default async function Home() {
   const supabase = createPublicClient();
 
-  const [{ data: apps }, { data: categories }] = await Promise.all([
+  const [{ data: apps }, { data: categories }, { data: billboards }] = await Promise.all([
     supabase
       .from("apps")
       .select("*, categories(id, name, slug)")
       .eq("status", "published")
       .order("downloads_count", { ascending: false }),
     supabase.from("categories").select("*").order("name"),
+    supabase
+      .from("billboards")
+      .select("*, apps(name, slug, icon_url, cover_url)")
+      .eq("active", true)
+      .order("display_order", { ascending: true }),
   ]);
 
   const allApps = (apps as App[]) ?? [];
+
+  const billboardSlides: BillboardSlide[] = ((billboards as Billboard[]) ?? [])
+    .filter((b) => b.apps)
+    .map((b) => ({
+      id: b.id,
+      badge: b.offer,
+      title: b.title,
+      body: null,
+      coverUrl: b.apps!.cover_url,
+      iconUrl: b.apps!.icon_url,
+      href: `/shop/${b.apps!.slug}`,
+      ctaLabel: "Learn more",
+    }));
   const featured = allApps.slice(0, 4);
   const topApps = allApps.slice(0, 3);
 
@@ -45,7 +63,7 @@ export default async function Home() {
         <GoodbyeModal />
       </Suspense>
 
-      <HeroBanner />
+      <HeroBanner billboards={billboardSlides} />
 
       <section id="featured" className="mb-12 mt-14 scroll-mt-24">
         <div className="mb-5 flex items-end justify-between">

@@ -683,3 +683,59 @@ end;
 $$;
 
 grant execute on function public.delete_own_account() to authenticated;
+
+-- ============================================================
+-- 13. Homepage hero billboards -------------------------------------------
+-- Admin-curated slides for the homepage hero carousel. Each billboard
+-- points at an app: the app's icon floats over the billboard (like the
+-- default NexApp logo used to), the app's cover image is the billboard
+-- background, and "Learn more" links straight to that app's page.
+-- ============================================================
+
+-- Apps can now have a wide cover image (used as the billboard background
+-- when featured) in addition to their square icon.
+alter table public.apps add column if not exists cover_url text;
+
+create table if not exists public.billboards (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  app_id uuid not null references public.apps(id) on delete cascade,
+  offer text,
+  display_order integer not null default 0,
+  active boolean not null default true,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists billboards_touch_updated_at on public.billboards;
+create trigger billboards_touch_updated_at
+  before update on public.billboards
+  for each row execute procedure public.touch_updated_at();
+
+alter table public.billboards enable row level security;
+
+drop policy if exists "Active billboards are viewable by everyone" on public.billboards;
+create policy "Active billboards are viewable by everyone"
+  on public.billboards for select
+  using (active = true or public.is_admin(auth.uid()));
+
+drop policy if exists "Admins can insert billboards" on public.billboards;
+create policy "Admins can insert billboards"
+  on public.billboards for insert
+  with check (public.is_admin(auth.uid()));
+
+drop policy if exists "Admins can update billboards" on public.billboards;
+create policy "Admins can update billboards"
+  on public.billboards for update
+  using (public.is_admin(auth.uid()));
+
+drop policy if exists "Admins can delete billboards" on public.billboards;
+create policy "Admins can delete billboards"
+  on public.billboards for delete
+  using (public.is_admin(auth.uid()));
+
+-- No new storage policies needed: cover images upload into the same
+-- 'app-assets' bucket under 'covers/' (admin) or 'submissions/<uid>/covers/'
+-- (user submissions), both already covered by the existing app-assets
+-- storage policies above.
