@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
-import { LayoutGrid, GitBranch } from "lucide-react";
+import Link from "next/link";
+import { LayoutGrid, GitBranch, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DownloadButton from "@/components/DownloadButton";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -64,6 +65,10 @@ export default async function AppDetailPage({
     data: { user },
   } = await supabase.auth.getUser();
 
+  const isAdmin = user
+    ? (await supabase.rpc("is_admin", { uid: user.id })).data === true
+    : false;
+
   const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -83,7 +88,17 @@ export default async function AppDetailPage({
             )}
           </div>
           <div>
-            <h1 className="font-display text-3xl font-bold">{typedApp.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-3xl font-bold">{typedApp.name}</h1>
+              {isAdmin && (
+                <Link
+                  href={`/admin/${typedApp.id}/edit`}
+                  className="glass-card aurora-border flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-text transition-transform hover:scale-105"
+                >
+                  <Pencil size={12} /> Edit
+                </Link>
+              )}
+            </div>
             {typedApp.tagline && (
               <p className="mt-1 text-text-muted">{typedApp.tagline}</p>
             )}
