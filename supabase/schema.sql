@@ -743,3 +743,69 @@ create policy "Admins can delete billboards"
 -- 'app-assets' bucket under 'covers/' (admin) or 'submissions/<uid>/covers/'
 -- (user submissions), both already covered by the existing app-assets
 -- storage policies above.
+
+-- ============================================================
+-- 14. Rate limiting -------------------------------------------------------
+-- A shared, serverless-safe rate limiter: server actions call
+-- check_rate_limit() with a key that scopes the limit (e.g.
+-- 'submit_app:<user id>' or 'billboard_save:<user id>'), a max hit count,
+-- and a window. This lives in Postgres (not in-memory) so it works
+-- correctly across Vercel's serverless/edge instances, which don't share
+-- memory. All thresholds are passed in by the caller, not hardcoded here.
+-- ============================================================
+
+create table if not exists public.rate_limit_hits (
+  id bigint generated always as identity primary key,
+  rl_key text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists rate_limit_hits_key_created_idx
+  on public.rate_limit_hits (rl_key, created_at);
+
+-- Old rows are cheap to keep briefly and prune opportunistically on every
+-- call, so there's no separate cron/job needed to stop this table growing
+-- forever.
+create or replace function public.check_rate_limit(
+  p_key text,
+  p_max_hits integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  window_start timestamptz := now() - (p_window_seconds || ' seconds')::interval;
+  hit_count integer;
+begin
+  delete from public.rate_limit_hits
+  where created_at < now() - interval '1 day';
+
+  select count(*) into hit_count
+  from public.rate_limit_hits
+  where rl_key = p_key and created_at >= window_start;
+
+  if hit_count >= p_max_hits then
+    return false;
+  end if;
+
+  insert into public.rate_limit_hits (rl_key) values (p_key);
+  return true;
+end;
+$$;
+
+-- Only server-side code (using the signed-in user's session, which is
+-- always authenticated or anon through our server actions) calls this —
+-- grant to both roles since some limits key off IP for signed-out users.
+grant execute on function public.check_rate_limit(text, integer, integer) to authenticated, anon;
+
+alter table public.rate_limit_hits enable row level security;
+-- No direct table access for anyone; all reads/writes go through the
+-- security-definer function above.
+drop policy if exists "No direct access to rate limit hits" on public.rate_limit_hits;
+create policy "No direct access to rate limit hits"
+  on public.rate_limit_hits for all
+  using (false)
+  with check (false);

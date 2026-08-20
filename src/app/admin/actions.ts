@@ -4,6 +4,10 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { validateImageFile } from "@/lib/fileValidation";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { safeError } from "@/lib/errors";
+import { coverPositionSchema } from "@/lib/validation/billboard";
 
 const ASSET_BUCKET = "app-assets";
 
@@ -20,14 +24,22 @@ async function uploadAsset(
   file: File,
   folder: "icons" | "screenshots" | "covers"
 ) {
-  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+  // Never trust the client: re-validate type/size/actual content
+  // server-side before this file ever touches storage.
+  const validation = await validateImageFile(file);
+  if (!validation.ok) throw new Error(validation.error);
+
+  // Extension comes from the validated MIME type, not the client-supplied
+  // filename — the filename is attacker-controlled and shouldn't drive
+  // anything about how the file is stored.
+  const ext = file.type === "image/png" ? "png" : "jpg";
   const path = `${folder}/${randomUUID()}.${ext}`;
 
   const { error } = await supabase.storage
     .from(ASSET_BUCKET)
     .upload(path, file, { contentType: file.type, upsert: true });
 
-  if (error) throw new Error(`Upload failed: ${error.message}`);
+  if (error) throw new Error(safeError(`uploadAsset:${folder}`, error));
 
   const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
   return data.publicUrl;
@@ -35,6 +47,18 @@ async function uploadAsset(
 
 export async function saveApp(formData: FormData) {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  const { allowed, error: rateLimitError } = await checkRateLimit(
+    supabase,
+    `app_save:${user.id}`,
+    { maxHits: 30, windowSeconds: 60 }
+  );
+  if (!allowed) throw new Error(rateLimitError);
 
   const id = formData.get("id") as string | null;
   const name = (formData.get("name") as string).trim();
@@ -64,7 +88,9 @@ export async function saveApp(formData: FormData) {
   if (coverFile && coverFile.size > 0) {
     coverUrl = await uploadAsset(supabase, coverFile, "covers");
   }
-  const coverPosition = (formData.get("cover_position") as string) || "50% 50%";
+  const coverPositionRaw = (formData.get("cover_position") as string) || "50% 50%";
+  const coverPositionParsed = coverPositionSchema.safeParse(coverPositionRaw);
+  const coverPosition = coverPositionParsed.success ? coverPositionParsed.data : "50% 50%";
 
   // Screenshots: keep existing ones (each tagged with a platform group) and
   // append any newly uploaded files, tagged with the group chosen for them.
@@ -110,15 +136,12 @@ export async function saveApp(formData: FormData) {
 
   if (id) {
     const { error } = await supabase.from("apps").update(payload).eq("id", id);
-    if (error) throw new Error(`Could not update app: ${error.message}`);
+    if (error) throw new Error(safeError("saveApp:update", error));
   } else {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("apps")
-      .insert({ ...payload, created_by: user?.id });
-    if (error) throw new Error(`Could not create app: ${error.message}`);
+      .insert({ ...payload, created_by: user.id });
+    if (error) throw new Error(safeError("saveApp:insert", error));
   }
 
   revalidatePath("/admin");
