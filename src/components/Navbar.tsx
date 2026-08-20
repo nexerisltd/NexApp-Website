@@ -14,6 +14,7 @@ import InstallAppButton from "@/components/InstallAppButton";
 import NotificationBell from "@/components/NotificationBell";
 import UserMenu from "@/components/UserMenu";
 import LogoutButton from "@/components/LogoutButton";
+import NavLink from "@/components/NavLink";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -68,41 +69,12 @@ export default function Navbar() {
           Nex<span className="aurora-text">App</span>
         </Link>
 
-        <div className="hidden items-center gap-1 text-sm text-text-muted sm:flex">
-          <Link
-            href="/"
-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            Home
-          </Link>
-          <Link
-            href="/shop"
-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            Apps
-          </Link>
-          <Link
-            href="/shop"
-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            Categories
-          </Link>
-          {!isAdmin && (
-            <Link
-              href="/submit"
-              className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
-            >
-              Developers
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
-            >
-              Admin
-            </Link>
-          )}
+        <div className="hidden items-center gap-1 text-sm sm:flex">
+          <NavLink href="/">Home</NavLink>
+          <NavLink href="/shop">Apps</NavLink>
+          <NavLink href="/shop">Categories</NavLink>
+          {!isAdmin && <NavLink href="/submit">Developers</NavLink>}
+          {isAdmin && <NavLink href="/admin">Admin</NavLink>}
         </div>
 
         <div className="hidden flex-1 justify-center px-6 lg:flex">
@@ -160,39 +132,39 @@ export default function Navbar() {
             className="overflow-hidden border-t border-border sm:hidden"
           >
             <div className="flex flex-col gap-4 px-6 py-5 text-sm text-text-muted">
-              <Link href="/" className="hover:text-text">
+              <NavLink href="/" className="w-fit">
                 Home
-              </Link>
-              <Link href="/shop" className="hover:text-text">
+              </NavLink>
+              <NavLink href="/shop" className="w-fit">
                 Shop
-              </Link>
-              <Link href="/source" className="hover:text-text">
+              </NavLink>
+              <NavLink href="/source" className="w-fit">
                 Source
-              </Link>
+              </NavLink>
               {isAdmin && (
-                <Link href="/admin" className="hover:text-text">
+                <NavLink href="/admin" className="w-fit">
                   Admin
-                </Link>
+                </NavLink>
               )}
               {user && (
-                <Link href="/favorites" className="hover:text-text">
+                <NavLink href="/favorites" className="w-fit">
                   My Favorites
-                </Link>
+                </NavLink>
               )}
               {user && (
-                <Link href="/downloads" className="hover:text-text">
+                <NavLink href="/downloads" className="w-fit">
                   My Downloads
-                </Link>
+                </NavLink>
               )}
               {user && !isAdmin && (
-                <Link href="/submit" className="hover:text-text">
+                <NavLink href="/submit" className="w-fit">
                   Submit an app
-                </Link>
+                </NavLink>
               )}
               {user && !isAdmin && (
-                <Link href="/dashboard" className="hover:text-text">
+                <NavLink href="/dashboard" className="w-fit">
                   Developer Dashboard
-                </Link>
+                </NavLink>
               )}
               {user ? (
                 <LogoutButton />

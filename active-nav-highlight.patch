@@ -1,0 +1,203 @@
+diff --git a/src/components/AdminSubNav.tsx b/src/components/AdminSubNav.tsx
+index ff1d10e..c9f1a3a 100644
+--- a/src/components/AdminSubNav.tsx
++++ b/src/components/AdminSubNav.tsx
+@@ -2,6 +2,7 @@
+ 
+ import Link from "next/link";
+ import { usePathname } from "next/navigation";
++import { motion } from "framer-motion";
+ 
+ const tabs = [
+   { href: "/admin", label: "Apps" },
+@@ -27,11 +28,20 @@ export default function AdminSubNav() {
+           <Link
+             key={tab.href}
+             href={tab.href}
+-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+-              active ? "neu-pressed text-accent" : "glass-card text-text-muted"
++            className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
++              active ? "text-accent" : "glass-card text-text-muted"
+             }`}
+           >
+-            {tab.label}
++            {active && (
++              <motion.span
++                aria-hidden
++                layoutId="admin-nav-active"
++                className="absolute inset-0 -z-10 rounded-full neu-pressed"
++                animate={{ opacity: [0.6, 1, 0.6] }}
++                transition={{ opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" } }}
++              />
++            )}
++            <span className="relative">{tab.label}</span>
+           </Link>
+         );
+       })}
+diff --git a/src/components/NavLink.tsx b/src/components/NavLink.tsx
+new file mode 100644
+index 0000000..110175a
+--- /dev/null
++++ b/src/components/NavLink.tsx
+@@ -0,0 +1,45 @@
++"use client";
++
++import Link from "next/link";
++import { usePathname } from "next/navigation";
++import { motion } from "framer-motion";
++
++function isActivePath(pathname: string, href: string) {
++  if (href === "/") return pathname === "/";
++  return pathname === href || pathname.startsWith(`${href}/`);
++}
++
++export default function NavLink({
++  href,
++  children,
++  className = "",
++}: {
++  href: string;
++  children: React.ReactNode;
++  className?: string;
++}) {
++  const pathname = usePathname();
++  const active = isActivePath(pathname, href);
++
++  return (
++    <Link
++      href={href}
++      className={`relative rounded-lg px-3 py-2 transition-colors ${
++        active ? "text-text" : "text-text-muted hover:bg-surface-2 hover:text-text"
++      } ${className}`}
++    >
++      {active && (
++        // Loops forever (repeat: Infinity) for as long as this page stays
++        // active — not a one-off transition, so the current nav item keeps
++        // gently pulsing the whole time the person is on that page.
++        <motion.span
++          aria-hidden
++          className="absolute inset-0 -z-10 rounded-lg bg-accent/15 ring-1 ring-accent/30"
++          animate={{ opacity: [0.5, 1, 0.5] }}
++          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
++        />
++      )}
++      <span className="relative font-medium">{children}</span>
++    </Link>
++  );
++}
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index efd3673..b81efe5 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -14,6 +14,7 @@ import InstallAppButton from "@/components/InstallAppButton";
+ import NotificationBell from "@/components/NotificationBell";
+ import UserMenu from "@/components/UserMenu";
+ import LogoutButton from "@/components/LogoutButton";
++import NavLink from "@/components/NavLink";
+ 
+ export default function Navbar() {
+   const pathname = usePathname();
+@@ -68,41 +69,12 @@ export default function Navbar() {
+           Nex<span className="aurora-text">App</span>
+         </Link>
+ 
+-        <div className="hidden items-center gap-1 text-sm text-text-muted sm:flex">
+-          <Link
+-            href="/"
+-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
+-          >
+-            Home
+-          </Link>
+-          <Link
+-            href="/shop"
+-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
+-          >
+-            Apps
+-          </Link>
+-          <Link
+-            href="/shop"
+-            className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
+-          >
+-            Categories
+-          </Link>
+-          {!isAdmin && (
+-            <Link
+-              href="/submit"
+-              className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
+-            >
+-              Developers
+-            </Link>
+-          )}
+-          {isAdmin && (
+-            <Link
+-              href="/admin"
+-              className="rounded-lg px-3 py-2 transition-colors hover:bg-surface-2 hover:text-text"
+-            >
+-              Admin
+-            </Link>
+-          )}
++        <div className="hidden items-center gap-1 text-sm sm:flex">
++          <NavLink href="/">Home</NavLink>
++          <NavLink href="/shop">Apps</NavLink>
++          <NavLink href="/shop">Categories</NavLink>
++          {!isAdmin && <NavLink href="/submit">Developers</NavLink>}
++          {isAdmin && <NavLink href="/admin">Admin</NavLink>}
+         </div>
+ 
+         <div className="hidden flex-1 justify-center px-6 lg:flex">
+@@ -160,39 +132,39 @@ export default function Navbar() {
+             className="overflow-hidden border-t border-border sm:hidden"
+           >
+             <div className="flex flex-col gap-4 px-6 py-5 text-sm text-text-muted">
+-              <Link href="/" className="hover:text-text">
++              <NavLink href="/" className="w-fit">
+                 Home
+-              </Link>
+-              <Link href="/shop" className="hover:text-text">
++              </NavLink>
++              <NavLink href="/shop" className="w-fit">
+                 Shop
+-              </Link>
+-              <Link href="/source" className="hover:text-text">
++              </NavLink>
++              <NavLink href="/source" className="w-fit">
+                 Source
+-              </Link>
++              </NavLink>
+               {isAdmin && (
+-                <Link href="/admin" className="hover:text-text">
++                <NavLink href="/admin" className="w-fit">
+                   Admin
+-                </Link>
++                </NavLink>
+               )}
+               {user && (
+-                <Link href="/favorites" className="hover:text-text">
++                <NavLink href="/favorites" className="w-fit">
+                   My Favorites
+-                </Link>
++                </NavLink>
+               )}
+               {user && (
+-                <Link href="/downloads" className="hover:text-text">
++                <NavLink href="/downloads" className="w-fit">
+                   My Downloads
+-                </Link>
++                </NavLink>
+               )}
+               {user && !isAdmin && (
+-                <Link href="/submit" className="hover:text-text">
++                <NavLink href="/submit" className="w-fit">
+                   Submit an app
+-                </Link>
++                </NavLink>
+               )}
+               {user && !isAdmin && (
+-                <Link href="/dashboard" className="hover:text-text">
++                <NavLink href="/dashboard" className="w-fit">
+                   Developer Dashboard
+-                </Link>
++                </NavLink>
+               )}
+               {user ? (
+                 <LogoutButton />
