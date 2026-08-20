@@ -25,7 +25,7 @@ export default async function Home() {
     supabase.from("categories").select("*").order("name"),
     supabase
       .from("billboards")
-      .select("*, apps(name, slug, icon_url, cover_url)")
+      .select("*, apps(name, slug, icon_url, cover_url, cover_position)")
       .eq("active", true)
       .order("display_order", { ascending: true }),
   ]);
@@ -40,6 +40,7 @@ export default async function Home() {
       title: b.title,
       body: null,
       coverUrl: b.apps!.cover_url,
+      coverPosition: b.apps!.cover_position || "50% 50%",
       iconUrl: b.apps!.icon_url,
       href: `/shop/${b.apps!.slug}`,
       ctaLabel: "Learn more",

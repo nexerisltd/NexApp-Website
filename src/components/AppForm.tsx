@@ -152,7 +152,7 @@ export default function AppForm({
         <label className="mb-1.5 block text-xs font-mono text-text-muted">
           App cover (PNG/JPEG)
         </label>
-        <CoverFileInput existingUrl={app?.cover_url} />
+        <CoverFileInput existingUrl={app?.cover_url} existingPosition={app?.cover_position} />
       </div>
 
       <div>

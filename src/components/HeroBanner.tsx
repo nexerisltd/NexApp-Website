@@ -11,6 +11,7 @@ export type BillboardSlide = {
   title: string;
   body: string | null;
   coverUrl: string | null;
+  coverPosition: string;
   iconUrl: string | null;
   href: string;
   ctaLabel: string;
@@ -25,6 +26,7 @@ const DEFAULT_SLIDES: BillboardSlide[] = [
     title: "Discover the Best\nApps for You",
     body: "Explore thousands of amazing apps, tools, and games. Find your next favorite app today.",
     coverUrl: null,
+    coverPosition: "50% 50%",
     iconUrl: "/icon-512.png",
     href: "/shop",
     ctaLabel: "Explore Apps",
@@ -35,6 +37,7 @@ const DEFAULT_SLIDES: BillboardSlide[] = [
     title: "Built by developers,\nshared with everyone",
     body: "Every app in the store comes from someone who built it and wanted to share it. Yours could be next.",
     coverUrl: null,
+    coverPosition: "50% 50%",
     iconUrl: "/icon-512.png",
     href: "/submit",
     ctaLabel: "Submit an app",
@@ -45,6 +48,7 @@ const DEFAULT_SLIDES: BillboardSlide[] = [
     title: "Install it like\na native app",
     body: "NexApp works as a Progressive Web App — install it once and open it straight from your desktop or home screen.",
     coverUrl: null,
+    coverPosition: "50% 50%",
     iconUrl: "/icon-512.png",
     href: "/shop",
     ctaLabel: "Get started",
@@ -91,7 +95,12 @@ export default function HeroBanner({ billboards }: { billboards?: BillboardSlide
             className="absolute inset-0"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={slide.coverUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={slide.coverUrl}
+              alt=""
+              style={{ objectPosition: slide.coverPosition }}
+              className="h-full w-full object-cover"
+            />
             {/* Dark scrim so the title/body stay readable over any cover photo,
                 regardless of the site's light/dark theme. */}
             <div className="absolute inset-0 bg-gradient-to-r from-[#0c0a1f]/95 via-[#0c0a1f]/75 to-[#0c0a1f]/30" />

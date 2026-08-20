@@ -64,6 +64,7 @@ export async function saveApp(formData: FormData) {
   if (coverFile && coverFile.size > 0) {
     coverUrl = await uploadAsset(supabase, coverFile, "covers");
   }
+  const coverPosition = (formData.get("cover_position") as string) || "50% 50%";
 
   // Screenshots: keep existing ones (each tagged with a platform group) and
   // append any newly uploaded files, tagged with the group chosen for them.
@@ -98,6 +99,7 @@ export async function saveApp(formData: FormData) {
     category_id: (formData.get("category_id") as string) || null,
     icon_url: iconUrl,
     cover_url: coverUrl,
+    cover_position: coverPosition,
     screenshots,
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string) || null,

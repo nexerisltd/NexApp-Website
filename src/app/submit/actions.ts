@@ -70,6 +70,7 @@ export async function submitApp(formData: FormData) {
   if (coverFile && coverFile.size > 0) {
     coverUrl = await uploadSubmissionAsset(supabase, user.id, coverFile, "covers");
   }
+  const coverPosition = (formData.get("cover_position") as string) || "50% 50%";
 
   const screenshots: { url: string; group: string }[] = [];
   let newGroups: string[] = [];
@@ -102,6 +103,7 @@ export async function submitApp(formData: FormData) {
     category_id: (formData.get("category_id") as string) || null,
     icon_url: iconUrl,
     cover_url: coverUrl,
+    cover_position: coverPosition,
     screenshots,
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string) || null,

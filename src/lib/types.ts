@@ -32,6 +32,9 @@ export type App = {
   // Wide cover image used as the background when this app is featured in a
   // homepage hero billboard. Same aspect ratio as the billboard itself.
   cover_url: string | null;
+  // CSS object-position (e.g. "50% 30%") controlling which part of the
+  // cover stays visible when it's cropped to the billboard's 21:9 shape.
+  cover_position: string;
   screenshots: Screenshot[];
   version: string;
   size_label: string | null;
@@ -91,6 +94,7 @@ export type Billboard = {
     slug: string;
     icon_url: string | null;
     cover_url: string | null;
+    cover_position: string | null;
   } | null;
 };
 

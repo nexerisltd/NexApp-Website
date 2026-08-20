@@ -695,6 +695,10 @@ grant execute on function public.delete_own_account() to authenticated;
 -- Apps can now have a wide cover image (used as the billboard background
 -- when featured) in addition to their square icon.
 alter table public.apps add column if not exists cover_url text;
+-- CSS object-position value (e.g. '50% 30%') so the admin can pick which
+-- part of the cover stays in frame when it's cropped to the billboard's
+-- 21:9 shape.
+alter table public.apps add column if not exists cover_position text not null default '50% 50%';
 
 create table if not exists public.billboards (
   id uuid primary key default gen_random_uuid(),
