@@ -50,6 +50,17 @@ export async function submitApp(formData: FormData) {
 
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("dev_status")
+    .eq("id", user.id)
+    .single();
+  if (profile?.dev_status !== "verified") {
+    redirect(
+      `/apply-dev?error=${encodeURIComponent("You need to be a verified developer to submit an app.")}`
+    );
+  }
+
   // The most abuse-prone endpoint in the app (public, authenticated,
   // creates DB rows + uploads files) gets the strictest limit of any
   // server action here.

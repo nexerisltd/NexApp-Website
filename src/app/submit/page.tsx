@@ -18,6 +18,14 @@ export default async function SubmitAppPage({
 
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("dev_status")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.dev_status !== "verified") redirect("/apply-dev");
+
   const { data: categories } = await supabase.from("categories").select("*").order("name");
 
   return (
