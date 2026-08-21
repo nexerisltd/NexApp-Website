@@ -1,0 +1,153 @@
+diff --git a/src/app/privacy/page.tsx b/src/app/privacy/page.tsx
+index 94e36f9..7fa7be9 100644
+--- a/src/app/privacy/page.tsx
++++ b/src/app/privacy/page.tsx
+@@ -128,10 +128,21 @@ export default function PrivacyPolicyPage() {
+       <Section title="10. Contact us">
+         <p>
+           Questions about this policy or your data? Reach us at{" "}
+-          <a href="mailto:privacy@nexauras.com" className="text-accent underline">
+-            privacy@nexauras.com
+-          </a>
+-          .
++          <a href="mailto:nexappog@gmail.com" className="text-accent underline">
++            nexappog@gmail.com
++          </a>{" "}
++          (official NexApp support).
++        </p>
++        <p>
++          NexApp is a product of{" "}
++          <a href="mailto:nexeris.ltd@gmail.com" className="text-accent underline">
++            Nexeris Ltd.
++          </a>{" "}
++          (nexeris.ltd@gmail.com), built and maintained by{" "}
++          <a href="mailto:mr.arx.me@gmail.com" className="text-accent underline">
++            Arabi Islam / MR. ARX
++          </a>{" "}
++          (mr.arx.me@gmail.com).
+         </p>
+       </Section>
+     </div>
+diff --git a/src/app/terms/page.tsx b/src/app/terms/page.tsx
+index ca3bef9..99748e9 100644
+--- a/src/app/terms/page.tsx
++++ b/src/app/terms/page.tsx
+@@ -112,10 +112,21 @@ export default function TermsPage() {
+       <Section title="9. Contact us">
+         <p>
+           Questions about these Terms? Reach us at{" "}
+-          <a href="mailto:support@nexauras.com" className="text-accent underline">
+-            support@nexauras.com
+-          </a>
+-          .
++          <a href="mailto:nexappog@gmail.com" className="text-accent underline">
++            nexappog@gmail.com
++          </a>{" "}
++          (official NexApp support).
++        </p>
++        <p>
++          NexApp is a product of{" "}
++          <a href="mailto:nexeris.ltd@gmail.com" className="text-accent underline">
++            Nexeris Ltd.
++          </a>{" "}
++          (nexeris.ltd@gmail.com), built and maintained by{" "}
++          <a href="mailto:mr.arx.me@gmail.com" className="text-accent underline">
++            Arabi Islam / MR. ARX
++          </a>{" "}
++          (mr.arx.me@gmail.com).
+         </p>
+       </Section>
+     </div>
+diff --git a/src/components/Footer.tsx b/src/components/Footer.tsx
+index 94d4f7a..7d12c39 100644
+--- a/src/components/Footer.tsx
++++ b/src/components/Footer.tsx
+@@ -1,5 +1,4 @@
+ import Link from "next/link";
+-import TypewriterCredit from "@/components/TypewriterCredit";
+ 
+ export default function Footer() {
+   return (
+@@ -14,7 +13,6 @@ export default function Footer() {
+             Terms of Service
+           </Link>
+         </div>
+-        <TypewriterCredit className="text-text-muted" />
+       </div>
+     </footer>
+   );
+diff --git a/src/components/TypewriterCredit.tsx b/src/components/TypewriterCredit.tsx
+deleted file mode 100644
+index c7b1d98..0000000
+--- a/src/components/TypewriterCredit.tsx
++++ /dev/null
+@@ -1,69 +0,0 @@
+-"use client";
+-
+-import { useEffect, useState } from "react";
+-
+-type TypewriterCreditProps = {
+-  phrases?: string[];
+-  typingSpeedMs?: number;
+-  deletingSpeedMs?: number;
+-  pauseMs?: number;
+-  className?: string;
+-};
+-
+-/**
+- * Types out each phrase in `phrases`, pauses, deletes it, then moves on to
+- * the next — looping forever. Used on the launch page for the developer
+- * credit ("Developed by Arabi Islam" -> "MR. ARX" -> repeat).
+- */
+-export default function TypewriterCredit({
+-  phrases = ["Developed by Arabi Islam", "MR. ARX"],
+-  typingSpeedMs = 70,
+-  deletingSpeedMs = 40,
+-  pauseMs = 1400,
+-  className = "",
+-}: TypewriterCreditProps) {
+-  const [phraseIndex, setPhraseIndex] = useState(0);
+-  const [text, setText] = useState("");
+-  const [phase, setPhase] = useState<"typing" | "pausing" | "deleting">(
+-    "typing"
+-  );
+-
+-  useEffect(() => {
+-    const current = phrases[phraseIndex % phrases.length];
+-
+-    if (phase === "typing") {
+-      if (text.length < current.length) {
+-        const t = setTimeout(
+-          () => setText(current.slice(0, text.length + 1)),
+-          typingSpeedMs
+-        );
+-        return () => clearTimeout(t);
+-      }
+-      const t = setTimeout(() => setPhase("pausing"), pauseMs);
+-      return () => clearTimeout(t);
+-    }
+-
+-    if (phase === "pausing") {
+-      const t = setTimeout(() => setPhase("deleting"), pauseMs);
+-      return () => clearTimeout(t);
+-    }
+-
+-    // deleting
+-    if (text.length > 0) {
+-      const t = setTimeout(
+-        () => setText(current.slice(0, text.length - 1)),
+-        deletingSpeedMs
+-      );
+-      return () => clearTimeout(t);
+-    }
+-    setPhraseIndex((i) => (i + 1) % phrases.length);
+-    setPhase("typing");
+-  }, [text, phase, phraseIndex, phrases, typingSpeedMs, deletingSpeedMs, pauseMs]);
+-
+-  return (
+-    <span className={`inline-flex items-center font-mono ${className}`}>
+-      {text}
+-      <span className="typewriter-caret ml-0.5 inline-block w-[2px] h-[1em] bg-current align-middle" />
+-    </span>
+-  );
+-}

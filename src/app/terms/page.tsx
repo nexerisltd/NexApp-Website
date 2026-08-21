@@ -112,10 +112,21 @@ export default function TermsPage() {
       <Section title="9. Contact us">
         <p>
           Questions about these Terms? Reach us at{" "}
-          <a href="mailto:support@nexauras.com" className="text-accent underline">
-            support@nexauras.com
-          </a>
-          .
+          <a href="mailto:nexappog@gmail.com" className="text-accent underline">
+            nexappog@gmail.com
+          </a>{" "}
+          (official NexApp support).
+        </p>
+        <p>
+          NexApp is a product of{" "}
+          <a href="mailto:nexeris.ltd@gmail.com" className="text-accent underline">
+            Nexeris Ltd.
+          </a>{" "}
+          (nexeris.ltd@gmail.com), built and maintained by{" "}
+          <a href="mailto:mr.arx.me@gmail.com" className="text-accent underline">
+            Arabi Islam / MR. ARX
+          </a>{" "}
+          (mr.arx.me@gmail.com).
         </p>
       </Section>
     </div>

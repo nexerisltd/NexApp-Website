@@ -128,10 +128,21 @@ export default function PrivacyPolicyPage() {
       <Section title="10. Contact us">
         <p>
           Questions about this policy or your data? Reach us at{" "}
-          <a href="mailto:privacy@nexauras.com" className="text-accent underline">
-            privacy@nexauras.com
-          </a>
-          .
+          <a href="mailto:nexappog@gmail.com" className="text-accent underline">
+            nexappog@gmail.com
+          </a>{" "}
+          (official NexApp support).
+        </p>
+        <p>
+          NexApp is a product of{" "}
+          <a href="mailto:nexeris.ltd@gmail.com" className="text-accent underline">
+            Nexeris Ltd.
+          </a>{" "}
+          (nexeris.ltd@gmail.com), built and maintained by{" "}
+          <a href="mailto:mr.arx.me@gmail.com" className="text-accent underline">
+            Arabi Islam / MR. ARX
+          </a>{" "}
+          (mr.arx.me@gmail.com).
         </p>
       </Section>
     </div>

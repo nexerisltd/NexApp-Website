@@ -1,5 +1,4 @@
 import Link from "next/link";
-import TypewriterCredit from "@/components/TypewriterCredit";
 
 export default function Footer() {
   return (
@@ -14,7 +13,6 @@ export default function Footer() {
             Terms of Service
           </Link>
         </div>
-        <TypewriterCredit className="text-text-muted" />
       </div>
     </footer>
   );
