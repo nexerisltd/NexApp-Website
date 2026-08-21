@@ -35,6 +35,11 @@ export type App = {
   // CSS object-position (e.g. "50% 30%") controlling which part of the
   // cover stays visible when it's cropped to the billboard's 21:9 shape.
   cover_position: string;
+  // GitHub source repo — mandatory for outside developer submissions,
+  // optional for admin-created apps. source_public controls whether the
+  // link is shown on the app's public page or kept review-team-only.
+  github_url: string | null;
+  source_public: boolean;
   screenshots: Screenshot[];
   version: string;
   size_label: string | null;
@@ -71,14 +76,9 @@ export type Profile = {
   role: "user" | "admin";
 };
 
-export type Source = {
-  id: string;
-  app_id: string;
-  github_url: string;
-  created_at: string;
-  updated_at: string;
-  apps?: { name: string; slug: string; icon_url: string | null } | null;
-};
+// The separate `sources` table/admin section is retired — github_url and
+// source_public now live directly on `apps`, editable from the app form
+// itself (see AppForm.tsx / SubmitAppForm.tsx).
 
 export type Billboard = {
   id: string;

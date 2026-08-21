@@ -4,12 +4,10 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { validateImageFile } from "@/lib/fileValidation";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { safeError } from "@/lib/errors";
 import { coverPositionSchema } from "@/lib/validation/billboard";
-
-const ASSET_BUCKET = "app-assets";
+import { isTrustedAssetUrl } from "@/lib/assetUrl";
 
 function slugify(name: string) {
   return name
@@ -30,29 +28,19 @@ const submitAppSchema = z.object({
   version: z.string().trim().max(30),
   size_label: z.string().trim().max(30).nullable(),
   default_platform: z.string().trim().max(30),
+  // Mandatory for outside developers (unlike the optional version on the
+  // admin app form) — every public submission needs a repo our review
+  // team can actually test against before it goes live.
+  github_url: z
+    .string()
+    .trim()
+    .url("Enter a valid URL.")
+    .max(300)
+    .refine(
+      (url) => /^https:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/i.test(url),
+      "Must be a link to a GitHub repository (https://github.com/owner/repo)."
+    ),
 });
-
-async function uploadSubmissionAsset(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  file: File,
-  folder: "icons" | "screenshots" | "covers"
-) {
-  const validation = await validateImageFile(file);
-  if (!validation.ok) throw new Error(validation.error);
-
-  const ext = file.type === "image/png" ? "png" : "jpg";
-  const path = `submissions/${userId}/${folder}/${randomUUID()}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from(ASSET_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: true });
-
-  if (error) throw new Error(safeError(`uploadSubmissionAsset:${folder}`, error));
-
-  const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
 
 export async function submitApp(formData: FormData) {
   const supabase = await createClient();
@@ -82,6 +70,7 @@ export async function submitApp(formData: FormData) {
     version: (formData.get("version") as string) || "1.0.0",
     size_label: (formData.get("size_label") as string | null) || null,
     default_platform: (formData.get("default_platform") as string) || "desktop",
+    github_url: (formData.get("github_url") as string) || "",
   });
 
   if (!parsed.success) {
@@ -113,45 +102,29 @@ export async function submitApp(formData: FormData) {
     );
   }
 
-  let iconUrl: string | null = null;
-  let coverUrl: string | null = null;
-  try {
-    const iconFile = formData.get("icon_file") as File | null;
-    if (iconFile && iconFile.size > 0) {
-      iconUrl = await uploadSubmissionAsset(supabase, user.id, iconFile, "icons");
-    }
+  // Uploads happen client-side (real progress bars) before this action
+  // ever runs — only accept the resulting URLs if they truly point at our
+  // own storage bucket, so a tampered hidden field can't smuggle anything
+  // else in.
+  const iconUrlRaw = (formData.get("icon_url") as string) || null;
+  const iconUrl = isTrustedAssetUrl(iconUrlRaw) ? iconUrlRaw : null;
 
-    const coverFile = formData.get("cover_file") as File | null;
-    if (coverFile && coverFile.size > 0) {
-      coverUrl = await uploadSubmissionAsset(supabase, user.id, coverFile, "covers");
-    }
-  } catch (err) {
-    redirect(`/submit?error=${encodeURIComponent((err as Error).message)}`);
-  }
+  const coverUrlRaw = (formData.get("cover_url") as string) || null;
+  const coverUrl = isTrustedAssetUrl(coverUrlRaw) ? coverUrlRaw : null;
 
   const coverPositionRaw = (formData.get("cover_position") as string) || "50% 50%";
   const coverPositionParsed = coverPositionSchema.safeParse(coverPositionRaw);
   const coverPosition = coverPositionParsed.success ? coverPositionParsed.data : "50% 50%";
 
-  const screenshots: { url: string; group: string }[] = [];
-  let newGroups: string[] = [];
+  let screenshots: { url: string; group: string }[] = [];
   try {
-    newGroups = JSON.parse((formData.get("screenshot_groups") as string) || "[]");
+    screenshots = JSON.parse((formData.get("screenshots_json") as string) || "[]");
   } catch {
-    newGroups = [];
+    screenshots = [];
   }
-  const screenshotFiles = (formData.getAll("screenshot_files") as File[]).slice(0, 10);
-  for (let i = 0; i < screenshotFiles.length; i++) {
-    const file = screenshotFiles[i];
-    if (file && file.size > 0) {
-      try {
-        const url = await uploadSubmissionAsset(supabase, user.id, file, "screenshots");
-        screenshots.push({ url, group: newGroups[i] || "desktop" });
-      } catch (err) {
-        redirect(`/submit?error=${encodeURIComponent((err as Error).message)}`);
-      }
-    }
-  }
+  screenshots = screenshots.filter((s) => isTrustedAssetUrl(s.url));
+
+  const sourcePublic = formData.get("source_public") === "on";
 
   const baseSlug = slugify(fields.name);
   // Submissions can share a name with something already published, so make
@@ -175,6 +148,8 @@ export async function submitApp(formData: FormData) {
     default_platform: fields.default_platform,
     status: "pending",
     created_by: user.id,
+    github_url: fields.github_url,
+    source_public: sourcePublic,
   });
 
   if (error) {

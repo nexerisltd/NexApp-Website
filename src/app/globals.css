@@ -135,6 +135,57 @@ body {
   display: none;
 }
 
+/* ----- Liquid glass upload progress -------------------------------------
+   Real, data-driven progress (width = actual % uploaded) rendered as a
+   frosted acrylic track with an animated glossy "liquid" sheen sweeping
+   across the fill — Fluent Acrylic material + a glassmorphic sheen. */
+.liquid-progress-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  height: 8px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.liquid-progress-fill {
+  position: relative;
+  height: 100%;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 55%, #21c3e0)
+  );
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.liquid-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: liquid-sheen 1.3s linear infinite;
+}
+
+@keyframes liquid-sheen {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .aurora-text {
   color: var(--accent);
 }

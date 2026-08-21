@@ -49,12 +49,6 @@ export default async function AppDetailPage({
     default_platform: (app as App).default_platform ?? "desktop",
   };
 
-  const { data: source } = await supabase
-    .from("sources")
-    .select("github_url")
-    .eq("app_id", typedApp.id)
-    .maybeSingle();
-
   const { data: reviews } = await supabase
     .from("reviews")
     .select("*, profiles(full_name, avatar_url)")
@@ -68,6 +62,10 @@ export default async function AppDetailPage({
   const isAdmin = user
     ? (await supabase.rpc("is_admin", { uid: user.id })).data === true
     : false;
+
+  // Every submission includes a source repo for review purposes; whether
+  // it's shown here is the developer's own call (source_public).
+  const showSource = !!typedApp.github_url && (typedApp.source_public || isAdmin);
 
   const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
     year: "numeric",
@@ -137,14 +135,19 @@ export default async function AppDetailPage({
             </span>
           ))}
         </div>
-        {source?.github_url && (
+        {showSource && (
           <a
-            href={source.github_url}
+            href={typedApp.github_url!}
             target="_blank"
             rel="noreferrer"
             className="glass-card aurora-border ml-auto flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium transition-transform hover:scale-[1.03]"
           >
             <GitBranch size={13} /> View Source
+            {isAdmin && !typedApp.source_public && (
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[9px] text-text-muted">
+                hidden
+              </span>
+            )}
           </a>
         )}
       </div>

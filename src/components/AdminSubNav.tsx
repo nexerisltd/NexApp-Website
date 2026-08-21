@@ -10,7 +10,6 @@ const tabs = [
   { href: "/admin/submissions", label: "Submissions" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/analytics", label: "Analytics" },
-  { href: "/admin/source", label: "Source" },
   { href: "/admin/team", label: "Admins" },
 ];
 

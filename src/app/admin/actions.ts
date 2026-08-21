@@ -1,15 +1,13 @@
 "use server";
 
-import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { validateImageFile } from "@/lib/fileValidation";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { safeError } from "@/lib/errors";
 import { coverPositionSchema } from "@/lib/validation/billboard";
-
-const ASSET_BUCKET = "app-assets";
+import { isTrustedAssetUrl } from "@/lib/assetUrl";
 
 function slugify(name: string) {
   return name
@@ -19,31 +17,16 @@ function slugify(name: string) {
     .replace(/(^-|-$)/g, "");
 }
 
-async function uploadAsset(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  file: File,
-  folder: "icons" | "screenshots" | "covers"
-) {
-  // Never trust the client: re-validate type/size/actual content
-  // server-side before this file ever touches storage.
-  const validation = await validateImageFile(file);
-  if (!validation.ok) throw new Error(validation.error);
-
-  // Extension comes from the validated MIME type, not the client-supplied
-  // filename — the filename is attacker-controlled and shouldn't drive
-  // anything about how the file is stored.
-  const ext = file.type === "image/png" ? "png" : "jpg";
-  const path = `${folder}/${randomUUID()}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from(ASSET_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: true });
-
-  if (error) throw new Error(safeError(`uploadAsset:${folder}`, error));
-
-  const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
+// Optional for admin-created apps (unlike the mandatory version on the
+// public /submit form) — admins may be adding an in-house app with no
+// public repo yet.
+const githubUrlSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid URL.")
+  .max(300)
+  .optional()
+  .or(z.literal(""));
 
 export async function saveApp(formData: FormData) {
   const supabase = await createClient();
@@ -74,46 +57,33 @@ export async function saveApp(formData: FormData) {
     throw new Error("Add at least one platform with a download link.");
   }
 
-  // Icon: a newly uploaded file wins, otherwise keep whatever was there before.
-  let iconUrl = (formData.get("existing_icon_url") as string) || null;
-  const iconFile = formData.get("icon_file") as File | null;
-  if (iconFile && iconFile.size > 0) {
-    iconUrl = await uploadAsset(supabase, iconFile, "icons");
-  }
+  // Uploads now happen client-side directly to Storage (for real progress
+  // bars) — these hidden fields carry the resulting URLs, not raw files.
+  // Still re-verified server-side: only accept URLs that actually point at
+  // our own bucket, so a tampered hidden field can't smuggle in anything else.
+  const iconUrlRaw = (formData.get("icon_url") as string) || null;
+  const iconUrl = isTrustedAssetUrl(iconUrlRaw) ? iconUrlRaw : null;
 
-  // Cover: same pattern as the icon above — a newly uploaded file wins,
-  // otherwise keep whatever cover was already set (or none).
-  let coverUrl = (formData.get("existing_cover_url") as string) || null;
-  const coverFile = formData.get("cover_file") as File | null;
-  if (coverFile && coverFile.size > 0) {
-    coverUrl = await uploadAsset(supabase, coverFile, "covers");
-  }
+  const coverUrlRaw = (formData.get("cover_url") as string) || null;
+  const coverUrl = isTrustedAssetUrl(coverUrlRaw) ? coverUrlRaw : null;
+
   const coverPositionRaw = (formData.get("cover_position") as string) || "50% 50%";
   const coverPositionParsed = coverPositionSchema.safeParse(coverPositionRaw);
   const coverPosition = coverPositionParsed.success ? coverPositionParsed.data : "50% 50%";
 
-  // Screenshots: keep existing ones (each tagged with a platform group) and
-  // append any newly uploaded files, tagged with the group chosen for them.
   let screenshots: { url: string; group: string }[] = [];
   try {
-    screenshots = JSON.parse((formData.get("existing_screenshots") as string) || "[]");
+    screenshots = JSON.parse((formData.get("screenshots_json") as string) || "[]");
   } catch {
     screenshots = [];
   }
-  let newGroups: string[] = [];
-  try {
-    newGroups = JSON.parse((formData.get("screenshot_groups") as string) || "[]");
-  } catch {
-    newGroups = [];
-  }
-  const screenshotFiles = formData.getAll("screenshot_files") as File[];
-  for (let i = 0; i < screenshotFiles.length; i++) {
-    const file = screenshotFiles[i];
-    if (file && file.size > 0) {
-      const url = await uploadAsset(supabase, file, "screenshots");
-      screenshots.push({ url, group: newGroups[i] || "desktop" });
-    }
-  }
+  screenshots = screenshots.filter((s) => isTrustedAssetUrl(s.url));
+
+  const githubUrlInput = ((formData.get("github_url") as string) || "").trim();
+  const githubUrlParsed = githubUrlSchema.safeParse(githubUrlInput);
+  const githubUrl =
+    githubUrlParsed.success && githubUrlParsed.data ? githubUrlParsed.data : null;
+  const sourcePublic = formData.get("source_public") === "on";
 
   const defaultPlatform = (formData.get("default_platform") as string) || "desktop";
 
@@ -132,6 +102,8 @@ export async function saveApp(formData: FormData) {
     platform_links: platformLinks,
     default_platform: defaultPlatform,
     status: formData.get("status") as string,
+    github_url: githubUrl,
+    source_public: sourcePublic,
   };
 
   if (id) {
@@ -154,7 +126,7 @@ export async function deleteApp(formData: FormData) {
   const supabase = await createClient();
   const id = formData.get("id") as string;
   const { error } = await supabase.from("apps").delete().eq("id", id);
-  if (error) throw new Error(`Could not delete app: ${error.message}`);
+  if (error) throw new Error(safeError("deleteApp", error));
   revalidatePath("/admin");
   revalidatePath("/shop");
 }
@@ -167,7 +139,7 @@ export async function toggleStatus(formData: FormData) {
     .from("apps")
     .update({ status: status === "published" ? "draft" : "published" })
     .eq("id", id);
-  if (error) throw new Error(`Could not update status: ${error.message}`);
+  if (error) throw new Error(safeError("toggleStatus", error));
   revalidatePath("/admin");
   revalidatePath("/shop");
   revalidatePath("/");
@@ -176,7 +148,7 @@ export async function toggleStatus(formData: FormData) {
 export async function bulkSetStatus(ids: string[], status: "published" | "draft") {
   const supabase = await createClient();
   const { error } = await supabase.from("apps").update({ status }).in("id", ids);
-  if (error) throw new Error(`Could not update apps: ${error.message}`);
+  if (error) throw new Error(safeError("bulkSetStatus", error));
   revalidatePath("/admin");
   revalidatePath("/shop");
   revalidatePath("/");
@@ -185,7 +157,7 @@ export async function bulkSetStatus(ids: string[], status: "published" | "draft"
 export async function bulkDelete(ids: string[]) {
   const supabase = await createClient();
   const { error } = await supabase.from("apps").delete().in("id", ids);
-  if (error) throw new Error(`Could not delete apps: ${error.message}`);
+  if (error) throw new Error(safeError("bulkDelete", error));
   revalidatePath("/admin");
   revalidatePath("/shop");
   revalidatePath("/");

@@ -809,3 +809,29 @@ create policy "No direct access to rate limit hits"
   on public.rate_limit_hits for all
   using (false)
   with check (false);
+
+-- ============================================================
+-- 15. Source code moves onto apps directly ---------------------------------
+-- The separate admin "Source" section is retired — every app (whether
+-- admin-created or submitted by an outside developer) now carries its own
+-- GitHub link right on the apps row, editable from the same app form.
+-- Outside developers are required to provide one on submission (enforced
+-- in submit/actions.ts); admins can add one optionally when creating an
+-- app directly. source_public is the developer's own choice: checked
+-- shows the link on the app's public page, unchecked keeps it visible to
+-- the review team (and admins) only, never removed.
+-- ============================================================
+
+alter table public.apps add column if not exists github_url text;
+alter table public.apps add column if not exists source_public boolean not null default true;
+
+-- One-time backfill from the old per-app sources table, if it has rows
+-- this app doesn't already have a link for.
+update public.apps a
+set github_url = s.github_url
+from public.sources s
+where s.app_id = a.id and a.github_url is null;
+
+-- The old table/policies are no longer read or written by the app and can
+-- be dropped once you've confirmed the backfill above looks right:
+--   drop table if exists public.sources;

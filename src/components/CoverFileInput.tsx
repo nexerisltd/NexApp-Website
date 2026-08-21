@@ -2,6 +2,9 @@
 
 import { useRef, useState } from "react";
 import { ImagePlus, Move } from "lucide-react";
+import { uploadImage, type UploadScope } from "@/lib/uploadClient";
+import UploadProgress, { type UploadState } from "@/components/UploadProgress";
+import { useUploadBusySetter } from "@/lib/uploadTracker";
 
 function parsePosition(value: string): { x: number; y: number } {
   const match = value.match(/^([\d.]+)%\s+([\d.]+)%$/);
@@ -12,11 +15,15 @@ function parsePosition(value: string): { x: number; y: number } {
 export default function CoverFileInput({
   existingUrl,
   existingPosition,
+  uploadScope = "admin",
 }: {
   existingUrl?: string | null;
   existingPosition?: string | null;
+  uploadScope?: UploadScope;
 }) {
+  const [url, setUrl] = useState<string | null>(existingUrl ?? null);
   const [preview, setPreview] = useState<string | null>(existingUrl ?? null);
+  const [state, setState] = useState<UploadState>({ status: "idle" });
   const [position, setPosition] = useState(() =>
     parsePosition(existingPosition ?? "50% 50%")
   );
@@ -27,12 +34,29 @@ export default function CoverFileInput({
     startPos: { x: number; y: number };
   } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const setBusy = useUploadBusySetter("cover");
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      setPreview(URL.createObjectURL(file));
-      setPosition({ x: 50, y: 50 });
+    if (!file) return;
+
+    setPreview(URL.createObjectURL(file));
+    setPosition({ x: 50, y: 50 });
+    setState({ status: "uploading", pct: 0 });
+    setBusy(true);
+
+    try {
+      const publicUrl = await uploadImage(file, {
+        folder: "covers",
+        scope: uploadScope,
+        onProgress: (pct) => setState({ status: "uploading", pct }),
+      });
+      setUrl(publicUrl);
+      setState({ status: "done" });
+    } catch (err) {
+      setState({ status: "error", message: (err as Error).message });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -48,9 +72,6 @@ export default function CoverFileInput({
     const rect = frameRef.current.getBoundingClientRect();
     const dx = e.clientX - dragState.current.startX;
     const dy = e.clientY - dragState.current.startY;
-    // Dragging the photo itself (Facebook-style): moving the pointer right
-    // reveals more of the image's left side, so object-position x moves the
-    // opposite way of the drag.
     const nextX = dragState.current.startPos.x - (dx / rect.width) * 100;
     const nextY = dragState.current.startPos.y - (dy / rect.height) * 100;
     setPosition({
@@ -68,7 +89,7 @@ export default function CoverFileInput({
 
   return (
     <div className="flex flex-col gap-2">
-      <input type="hidden" name="existing_cover_url" value={existingUrl ?? ""} />
+      <input type="hidden" name="cover_url" value={url ?? ""} />
       <input type="hidden" name="cover_position" value={positionValue} />
 
       <div
@@ -107,11 +128,11 @@ export default function CoverFileInput({
 
       <input
         type="file"
-        name="cover_file"
         accept="image/png,image/jpeg"
         onChange={handleChange}
         className="aurora-border glass-card w-full max-w-md rounded-xl px-4 py-2.5 text-sm outline-none file:mr-3 file:rounded-full file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-text"
       />
+      <UploadProgress state={state} />
 
       {preview && (position.x !== 50 || position.y !== 50) && (
         <button
