@@ -59,6 +59,14 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
+      <Link
+        href="/dashboard/issues"
+        className="glass-card aurora-border mt-6 flex items-center justify-between rounded-2xl px-5 py-3 text-sm transition-transform hover:scale-[1.01]"
+      >
+        <span>Report an issue on one of your apps, or check on a request</span>
+        <span className="text-accent">View →</span>
+      </Link>
+
       <div className="mt-8 flex flex-col gap-3">
         {typedSubmissions.length === 0 && (
           <div className="glass-card rounded-2xl border border-dashed border-border p-10 text-center text-text-muted">

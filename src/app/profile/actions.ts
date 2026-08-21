@@ -28,6 +28,8 @@ export async function updateProfile(formData: FormData) {
   if (!user) redirect("/login");
 
   const fullName = (formData.get("full_name") as string | null)?.trim() || null;
+  const headline = ((formData.get("profile_headline") as string | null) || "").trim() || null;
+  const bio = ((formData.get("profile_bio") as string | null) || "").trim() || null;
   const existingAvatarUrl = (formData.get("existing_avatar_url") as string | null) || null;
   const avatarFile = formData.get("avatar_file") as File | null;
 
@@ -51,7 +53,12 @@ export async function updateProfile(formData: FormData) {
 
   const { error } = await supabase
     .from("profiles")
-    .update({ full_name: fullName, avatar_url: avatarUrl })
+    .update({
+      full_name: fullName,
+      avatar_url: avatarUrl,
+      profile_headline: headline,
+      profile_bio: bio,
+    })
     .eq("id", user.id);
 
   if (error) {

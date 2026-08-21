@@ -4,14 +4,29 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, CheckCheck, PackageCheck, PackageX, Sparkles } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  PackageCheck,
+  PackageX,
+  Sparkles,
+  AlertTriangle,
+  FlaskConical,
+  UserCheck,
+  ShieldAlert,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Notification } from "@/lib/types";
 
-const ICONS = {
+const ICONS: Record<Notification["type"], typeof Sparkles> = {
   app_update: Sparkles,
   submission_approved: PackageCheck,
   submission_declined: PackageX,
+  issue_request_new: AlertTriangle,
+  issue_request_status: FlaskConical,
+  issue_request_claimed: ShieldAlert,
+  dev_application_result: UserCheck,
+  app_issue_posted: AlertTriangle,
 };
 
 function relativeTime(dateStr: string) {
@@ -54,6 +69,26 @@ export default function NotificationBell({ userId }: { userId: string | null }) 
       });
     return () => {
       active = false;
+    };
+  }, [userId]);
+
+  // Real-time push: new rows land here the instant they're inserted (e.g.
+  // an issue request sent to this admin), no polling or refresh needed.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+        (payload) => {
+          setNotifications((prev) => [payload.new as Notification, ...prev]);
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
     };
   }, [userId]);
 

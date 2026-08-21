@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/LogoutButton";
 import AddAccountButton from "@/components/AddAccountButton";
@@ -21,7 +22,7 @@ export default async function ProfilePage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, avatar_url")
+    .select("full_name, avatar_url, profile_headline, profile_bio, role, dev_status")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -56,9 +57,22 @@ export default async function ProfilePage({
         </span>
         <h1 className="mt-4 font-display text-xl font-bold">{name}</h1>
         <p className="mt-1 text-sm text-text-muted">{user.email}</p>
+        {(profile?.role === "admin" || profile?.dev_status === "verified") && (
+          <Link
+            href={`/developers/${user.id}`}
+            className="mt-3 inline-block text-xs text-accent underline"
+          >
+            View public profile
+          </Link>
+        )}
       </div>
 
-      <ProfileEditForm fullName={profile?.full_name ?? ""} avatarUrl={avatarUrl} />
+      <ProfileEditForm
+        fullName={profile?.full_name ?? ""}
+        avatarUrl={avatarUrl}
+        headline={profile?.profile_headline ?? ""}
+        bio={profile?.profile_bio ?? ""}
+      />
 
       <div className="mt-8 flex flex-col gap-3">
         <p className="font-mono text-xs uppercase tracking-wide text-text-muted">

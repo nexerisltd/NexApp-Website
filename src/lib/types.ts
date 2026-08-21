@@ -74,6 +74,11 @@ export type Profile = {
   full_name: string | null;
   avatar_url: string | null;
   role: "user" | "admin";
+  dev_status: "none" | "pending" | "verified" | "rejected";
+  dev_application_note: string | null;
+  dev_reject_reason: string | null;
+  profile_headline: string | null;
+  profile_bio: string | null;
 };
 
 // The separate `sources` table/admin section is retired — github_url and
@@ -98,10 +103,54 @@ export type Billboard = {
   } | null;
 };
 
+export type AppIssue = {
+  id: string;
+  app_id: string;
+  title: string;
+  description: string | null;
+  download_blocked: boolean;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+};
+
+export type IssueRequestStatus = "pending" | "testing" | "granted" | "denied";
+
+export type IssueRequest = {
+  id: string;
+  app_id: string;
+  requested_by: string;
+  target_admin_id: string;
+  original_admin_id: string;
+  title: string;
+  description: string;
+  download_blocked: boolean;
+  eta_start: string | null;
+  eta_end: string | null;
+  status: IssueRequestStatus;
+  status_note: string | null;
+  assigned_at: string;
+  created_at: string;
+  updated_at: string;
+  apps?: { name: string; slug: string; icon_url: string | null } | null;
+  requester?: { full_name: string | null; avatar_url: string | null } | null;
+  target_admin?: { full_name: string | null; avatar_url: string | null } | null;
+};
+
 export type Notification = {
   id: string;
   user_id: string;
-  type: "app_update" | "submission_approved" | "submission_declined";
+  type:
+    | "app_update"
+    | "submission_approved"
+    | "submission_declined"
+    | "issue_request_new"
+    | "issue_request_status"
+    | "issue_request_claimed"
+    | "dev_application_result"
+    | "app_issue_posted";
   title: string;
   body: string | null;
   link: string | null;

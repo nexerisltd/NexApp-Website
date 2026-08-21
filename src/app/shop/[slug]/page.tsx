@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { LayoutGrid, GitBranch, Pencil } from "lucide-react";
+import { LayoutGrid, GitBranch, Pencil, AlertTriangle, Ban } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DownloadButton from "@/components/DownloadButton";
 import FavoriteButton from "@/components/FavoriteButton";
@@ -9,7 +9,7 @@ import CopyableId from "@/components/CopyableId";
 import StarRating from "@/components/StarRating";
 import ReviewsSection from "@/components/ReviewsSection";
 import ReportButton from "@/components/ReportButton";
-import type { App, Review } from "@/lib/types";
+import type { App, AppIssue, Review } from "@/lib/types";
 
 export default async function AppDetailPage({
   params,
@@ -67,6 +67,14 @@ export default async function AppDetailPage({
   // it's shown here is the developer's own call (source_public).
   const showSource = !!typedApp.github_url && (typedApp.source_public || isAdmin);
 
+  const { data: activeIssue } = await supabase
+    .from("app_issues")
+    .select("*")
+    .eq("app_id", typedApp.id)
+    .eq("active", true)
+    .maybeSingle();
+  const issue = activeIssue as AppIssue | null;
+
   const lastUpdated = new Date(typedApp.updated_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -75,6 +83,22 @@ export default async function AppDetailPage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-14">
+      {issue && (
+        <div className="glass-card mb-6 flex items-start gap-3 rounded-2xl border border-danger/40 bg-danger/5 p-4">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-danger" />
+          <div>
+            <p className="font-medium text-text">{issue.title}</p>
+            {issue.description && (
+              <p className="mt-1 text-sm text-text-muted">{issue.description}</p>
+            )}
+            {issue.download_blocked && (
+              <p className="mt-1.5 flex items-center gap-1 text-xs font-medium text-danger">
+                <Ban size={12} /> Downloads are temporarily unavailable while this is resolved
+              </p>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-text-muted overflow-hidden">
@@ -123,7 +147,13 @@ export default async function AppDetailPage({
       </div>
 
       <div className="mt-8 flex flex-wrap items-center gap-4">
-        <DownloadButton appId={typedApp.id} links={typedApp.platform_links} />
+        {issue?.download_blocked ? (
+          <span className="glass-card flex items-center gap-2 rounded-xl border border-danger/40 px-5 py-3 text-sm font-medium text-danger">
+            <Ban size={15} /> Download blocked — issue in progress
+          </span>
+        ) : (
+          <DownloadButton appId={typedApp.id} links={typedApp.platform_links} />
+        )}
         <FavoriteButton appId={typedApp.id} />
         <div className="flex flex-wrap items-center gap-2 text-text-muted">
           {typedApp.platform_links.map((link) => (

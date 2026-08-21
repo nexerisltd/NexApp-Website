@@ -835,3 +835,265 @@ where s.app_id = a.id and a.github_url is null;
 -- The old table/policies are no longer read or written by the app and can
 -- be dropped once you've confirmed the backfill above looks right:
 --   drop table if exists public.sources;
+
+-- ============================================================
+-- 16. Developer verification, profiles, app issues, issue requests --------
+-- ============================================================
+
+-- Dev verification pipeline: an outside developer applies, an admin
+-- reviews and approves/rejects (with a short reason), and only a
+-- 'verified' dev can build a public profile or send issue requests.
+alter table public.profiles add column if not exists dev_status text not null default 'none'
+  check (dev_status in ('none', 'pending', 'verified', 'rejected'));
+alter table public.profiles add column if not exists dev_application_note text;
+alter table public.profiles add column if not exists dev_reject_reason text;
+alter table public.profiles add column if not exists profile_headline text;
+alter table public.profiles add column if not exists profile_bio text;
+
+-- ---- App issues: admin-posted, shown as a banner on the app's page ------
+create table if not exists public.app_issues (
+  id uuid primary key default gen_random_uuid(),
+  app_id uuid not null references public.apps(id) on delete cascade,
+  title text not null,
+  description text,
+  download_blocked boolean not null default false,
+  active boolean not null default true,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+drop trigger if exists app_issues_touch_updated_at on public.app_issues;
+create trigger app_issues_touch_updated_at
+  before update on public.app_issues
+  for each row execute procedure public.touch_updated_at();
+
+create index if not exists app_issues_app_id_active_idx
+  on public.app_issues (app_id, active);
+
+alter table public.app_issues enable row level security;
+
+drop policy if exists "Active issues are public, admins see all" on public.app_issues;
+create policy "Active issues are public, admins see all"
+  on public.app_issues for select
+  using (active = true or public.is_admin(auth.uid()));
+
+drop policy if exists "Admins manage app issues" on public.app_issues;
+create policy "Admins manage app issues"
+  on public.app_issues for all
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+-- ---- Issue requests: a verified dev reporting a problem to one admin ----
+create table if not exists public.issue_requests (
+  id uuid primary key default gen_random_uuid(),
+  app_id uuid not null references public.apps(id) on delete cascade,
+  requested_by uuid not null references public.profiles(id) on delete cascade,
+  -- Whoever currently owns responding to this request (starts as the admin
+  -- the dev picked; can move to another admin once the 10-minute claim
+  -- window opens — see claim_issue_request()).
+  target_admin_id uuid not null references public.profiles(id) on delete cascade,
+  original_admin_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null,
+  description text not null,
+  download_blocked boolean not null default false,
+  eta_start timestamptz,
+  eta_end timestamptz,
+  status text not null default 'pending'
+    check (status in ('pending', 'testing', 'granted', 'denied')),
+  status_note text,
+  -- Resets every time ownership moves to a (possibly new) admin — the
+  -- 10-minute claim window is measured from here, not from created_at.
+  assigned_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists issue_requests_touch_updated_at on public.issue_requests;
+create trigger issue_requests_touch_updated_at
+  before update on public.issue_requests
+  for each row execute procedure public.touch_updated_at();
+
+create index if not exists issue_requests_target_admin_idx
+  on public.issue_requests (target_admin_id, status);
+create index if not exists issue_requests_requested_by_idx
+  on public.issue_requests (requested_by, created_at desc);
+
+alter table public.issue_requests enable row level security;
+
+drop policy if exists "Devs see their own requests, admins see all" on public.issue_requests;
+create policy "Devs see their own requests, admins see all"
+  on public.issue_requests for select
+  using (requested_by = auth.uid() or public.is_admin(auth.uid()));
+
+drop policy if exists "Verified devs create issue requests" on public.issue_requests;
+create policy "Verified devs create issue requests"
+  on public.issue_requests for insert
+  with check (
+    requested_by = auth.uid()
+    and exists (
+      select 1 from public.profiles
+      where id = auth.uid() and dev_status = 'verified'
+    )
+  );
+
+drop policy if exists "Admins update issue requests" on public.issue_requests;
+create policy "Admins update issue requests"
+  on public.issue_requests for update
+  using (public.is_admin(auth.uid()));
+
+-- Atomically lets an admin other than the current target claim a request
+-- once it's been sitting unanswered for 10+ minutes — a single UPDATE with
+-- these WHERE conditions is race-safe, so two admins clicking "claim" at
+-- the same instant can't both succeed.
+create or replace function public.claim_issue_request(p_request_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated_count integer;
+begin
+  if not public.is_admin(auth.uid()) then
+    return false;
+  end if;
+
+  update public.issue_requests
+  set target_admin_id = auth.uid(), assigned_at = now()
+  where id = p_request_id
+    and status = 'pending'
+    and assigned_at < now() - interval '10 minutes'
+    and target_admin_id <> auth.uid();
+
+  get diagnostics updated_count = row_count;
+  return updated_count > 0;
+end;
+$$;
+
+grant execute on function public.claim_issue_request(uuid) to authenticated;
+
+-- New event types this feature introduces.
+alter table public.notifications drop constraint if exists notifications_type_check;
+alter table public.notifications add constraint notifications_type_check
+  check (type in (
+    'app_update', 'submission_approved', 'submission_declined',
+    'issue_request_new', 'issue_request_status', 'issue_request_claimed',
+    'dev_application_result', 'app_issue_posted'
+  ));
+
+-- Realtime so the notification bell updates instantly, without a refresh —
+-- this is what makes "hard notification push" actually push.
+alter publication supabase_realtime add table public.notifications;
+-- Also realtime so a developer's issue-request status badge updates the
+-- instant an admin changes it, without needing to refresh the page.
+alter publication supabase_realtime add table public.issue_requests;
+
+-- ============================================================
+-- 17. Notification triggers for dev verification & issue requests --------
+-- Follows the same pattern as notify_app_update()/notify_submission_reviewed()
+-- above: security-definer triggers insert notifications directly, so no
+-- separate INSERT policy on notifications is needed for this feature.
+-- ============================================================
+
+create or replace function public.notify_dev_verification()
+returns trigger as $$
+begin
+  if old.dev_status = 'pending' and new.dev_status = 'verified' then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      new.id,
+      'dev_application_result',
+      'You''re a verified developer',
+      'You can now submit apps, report issues directly to an admin, and build a public developer profile.',
+      '/apply-dev'
+    );
+  elsif old.dev_status = 'pending' and new.dev_status = 'rejected' then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      new.id,
+      'dev_application_result',
+      'Developer application not approved',
+      coalesce(new.dev_reject_reason, 'No reason was given.'),
+      '/apply-dev'
+    );
+  end if;
+  return null;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_dev_status_changed on public.profiles;
+create trigger on_dev_status_changed
+  after update on public.profiles
+  for each row execute procedure public.notify_dev_verification();
+
+-- A new issue request -> notify the admin it was sent to.
+create or replace function public.notify_issue_request_new()
+returns trigger as $$
+declare
+  app_name text;
+begin
+  select name into app_name from public.apps where id = new.app_id;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (
+    new.target_admin_id,
+    'issue_request_new',
+    'New issue request: ' || coalesce(app_name, 'an app'),
+    new.title,
+    '/admin/issue-requests'
+  );
+  return null;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_issue_request_created on public.issue_requests;
+create trigger on_issue_request_created
+  after insert on public.issue_requests
+  for each row execute procedure public.notify_issue_request_new();
+
+-- Status changes -> notify the developer who filed it. Ownership moving to
+-- a different admin (a 10-minute claim) -> notify the admin who lost it.
+create or replace function public.notify_issue_request_changed()
+returns trigger as $$
+declare
+  app_name text;
+begin
+  select name into app_name from public.apps where id = new.app_id;
+
+  if new.status is distinct from old.status then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      new.requested_by,
+      'issue_request_status',
+      coalesce(app_name, 'Your issue request') || ': ' ||
+        case new.status
+          when 'testing' then 'now being tested'
+          when 'granted' then 'granted & applied'
+          when 'denied' then 'denied & dismissed'
+          else new.status
+        end,
+      coalesce(new.status_note, ''),
+      '/dashboard/issues'
+    );
+  end if;
+
+  if new.target_admin_id is distinct from old.target_admin_id then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      old.target_admin_id,
+      'issue_request_claimed',
+      'An unanswered request was claimed',
+      coalesce(app_name, 'An issue request') || ' — "' || new.title || '" was claimed by another admin after sitting unanswered for 10 minutes.',
+      '/admin/issue-requests'
+    );
+  end if;
+
+  return null;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_issue_request_updated on public.issue_requests;
+create trigger on_issue_request_updated
+  after update on public.issue_requests
+  for each row execute procedure public.notify_issue_request_changed();

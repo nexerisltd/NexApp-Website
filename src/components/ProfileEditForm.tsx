@@ -7,9 +7,13 @@ import { updateProfile } from "@/app/profile/actions";
 export default function ProfileEditForm({
   fullName,
   avatarUrl,
+  headline,
+  bio,
 }: {
   fullName: string;
   avatarUrl: string | null;
+  headline?: string;
+  bio?: string;
 }) {
   const [preview, setPreview] = useState<string | null>(avatarUrl);
   const [pending, setPending] = useState(false);
@@ -54,6 +58,24 @@ export default function ProfileEditForm({
         defaultValue={fullName}
         placeholder="Your name (shown on your published apps)"
         maxLength={80}
+        className="glass-card aurora-border w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-text-muted"
+      />
+
+      <input
+        type="text"
+        name="profile_headline"
+        defaultValue={headline ?? ""}
+        placeholder="Headline, e.g. Indie developer building productivity tools"
+        maxLength={100}
+        className="glass-card aurora-border w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-text-muted"
+      />
+
+      <textarea
+        name="profile_bio"
+        defaultValue={bio ?? ""}
+        placeholder="A short bio for your public profile"
+        maxLength={500}
+        rows={3}
         className="glass-card aurora-border w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-text-muted"
       />
 
