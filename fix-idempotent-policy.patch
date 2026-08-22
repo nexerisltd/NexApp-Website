@@ -1,0 +1,12 @@
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index 371bf08..beb11b6 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -177,6 +177,7 @@ create policy "Admins manage apps" on public.apps for all
+ -- /admin, which inserts with status='published', not 'pending', so this
+ -- check only ever applies to the public-submission path.
+ drop policy if exists "Signed-in users can submit apps for review" on public.apps;
++drop policy if exists "Verified developers can submit apps for review" on public.apps;
+ create policy "Verified developers can submit apps for review"
+   on public.apps for insert
+   with check (

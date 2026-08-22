@@ -3,6 +3,26 @@
 -- Run this once in the Supabase SQL Editor (or via `supabase db push`)
 -- ============================================================
 
+-- Idempotent helper: ALTER PUBLICATION ... ADD TABLE has no IF NOT EXISTS
+-- clause in Postgres, so re-running this file verbatim would error the
+-- second time around without this guard. Every "add a table to realtime"
+-- statement below goes through this instead of the raw ALTER PUBLICATION.
+create or replace function public.add_table_to_realtime(target_table regclass)
+returns void
+language plpgsql
+as $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = target_table::text
+  ) then
+    execute format('alter publication supabase_realtime add table %s', target_table);
+  end if;
+end;
+$$;
+
 -- 0. PROFILES (created first so is_admin() below can reference it) -----
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -177,6 +197,7 @@ create policy "Admins manage apps" on public.apps for all
 -- /admin, which inserts with status='published', not 'pending', so this
 -- check only ever applies to the public-submission path.
 drop policy if exists "Signed-in users can submit apps for review" on public.apps;
+drop policy if exists "Verified developers can submit apps for review" on public.apps;
 create policy "Verified developers can submit apps for review"
   on public.apps for insert
   with check (
@@ -995,10 +1016,10 @@ alter table public.notifications add constraint notifications_type_check
 
 -- Realtime so the notification bell updates instantly, without a refresh —
 -- this is what makes "hard notification push" actually push.
-alter publication supabase_realtime add table public.notifications;
+select public.add_table_to_realtime('public.notifications');
 -- Also realtime so a developer's issue-request status badge updates the
 -- instant an admin changes it, without needing to refresh the page.
-alter publication supabase_realtime add table public.issue_requests;
+select public.add_table_to_realtime('public.issue_requests');
 
 -- ============================================================
 -- 17. Notification triggers for dev verification & issue requests --------
@@ -1305,8 +1326,8 @@ $$ language plpgsql security definer;
 -- specific pages need push/pull, nothing else" requirement): the admin
 -- inbox watches for new pending requests, and the applicant's own
 -- /apply-dev page watches its own profiles row for a status change.
-alter publication supabase_realtime add table public.dev_verifications;
-alter publication supabase_realtime add table public.profiles;
+select public.add_table_to_realtime('public.dev_verifications');
+select public.add_table_to_realtime('public.profiles');
 
 -- ============================================================
 -- 20. Senior Admin tier + Search Console verification tools ---------------
