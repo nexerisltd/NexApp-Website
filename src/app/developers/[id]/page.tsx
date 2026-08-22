@@ -17,7 +17,9 @@ export default async function DeveloperProfilePage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, avatar_url, role, dev_status, profile_headline, profile_bio")
+    .select(
+      "id, full_name, display_name, country, avatar_url, role, dev_status, profile_headline, profile_bio"
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -44,7 +46,7 @@ export default async function DeveloperProfilePage({
     .eq("status", "published")
     .order("downloads_count", { ascending: false });
 
-  const name = profile.full_name || "Unnamed";
+  const name = profile.display_name || profile.full_name || "Unnamed";
   const initial = name.charAt(0).toUpperCase();
 
   return (
@@ -73,6 +75,9 @@ export default async function DeveloperProfilePage({
         </div>
         {nexId && (
           <p className="mt-2 font-mono text-xs text-text-muted">Nex ID: {nexId}</p>
+        )}
+        {profile.country && (
+          <p className="mt-1 text-xs text-text-muted">{profile.country}</p>
         )}
         {profile.profile_headline && (
           <p className="mt-2 text-sm text-text-muted">{profile.profile_headline}</p>

@@ -43,6 +43,7 @@ export async function validateImageFileClient(
 // fetch) specifically because XHR exposes real `upload.onprogress` byte
 // events — this is genuine transfer progress, not a simulated timer.
 function uploadWithProgress(opts: {
+  bucket: string;
   path: string;
   file: File;
   accessToken: string;
@@ -51,7 +52,7 @@ function uploadWithProgress(opts: {
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const url = `${opts.supabaseUrl}/storage/v1/object/${ASSET_BUCKET}/${opts.path}`;
+    const url = `${opts.supabaseUrl}/storage/v1/object/${opts.bucket}/${opts.path}`;
     xhr.open("POST", url);
     xhr.setRequestHeader("Authorization", `Bearer ${opts.accessToken}`);
     xhr.setRequestHeader("x-upsert", "true");
@@ -98,6 +99,7 @@ export async function uploadImage(
       : `${opts.folder}/${random}.${ext}`;
 
   await uploadWithProgress({
+    bucket: ASSET_BUCKET,
     path,
     file,
     accessToken: session.access_token,
@@ -107,4 +109,44 @@ export async function uploadImage(
 
   const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+const PRIVATE_DOC_BUCKET = "dev-verification-docs";
+
+// Government ID / selfie uploads for developer verification. These go into
+// a PRIVATE bucket (not app-assets) — the return value is a storage PATH,
+// not a public URL, because the bucket has no public access at all. The
+// only way to ever view one of these files is a short-lived signed URL
+// minted server-side for an authorized viewer (the owner or an admin) —
+// see src/lib/devDocSignedUrl.ts.
+export async function uploadPrivateDoc(
+  file: File,
+  opts: {
+    folder: "gov_id" | "selfie";
+    onProgress?: (pct: number) => void;
+  }
+): Promise<string> {
+  const validation = await validateImageFileClient(file);
+  if (!validation.ok) throw new Error(validation.error);
+
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("You must be signed in to upload.");
+
+  const ext = file.type === "image/png" ? "png" : "jpg";
+  const random = crypto.randomUUID();
+  const path = `${session.user.id}/${opts.folder}/${random}.${ext}`;
+
+  await uploadWithProgress({
+    bucket: PRIVATE_DOC_BUCKET,
+    path,
+    file,
+    accessToken: session.access_token,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    onProgress: opts.onProgress ?? (() => {}),
+  });
+
+  return path;
 }

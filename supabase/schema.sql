@@ -1107,3 +1107,203 @@ drop trigger if exists on_issue_request_updated on public.issue_requests;
 create trigger on_issue_request_updated
   after update on public.issue_requests
   for each row execute procedure public.notify_issue_request_changed();
+
+-- ============================================================
+-- 18. Full developer identity verification (KYC) --------------------------
+-- Replaces the simple "note" application with a proper verification
+-- record: legal identity, government ID, a selfie for a human reviewer to
+-- match against the ID, developer info, and required agreements. This is
+-- sensitive personal data, so it lives in its own table with tight RLS
+-- (owner + admin only, never public) and its documents live in a PRIVATE
+-- storage bucket (not the public app-assets bucket) — served to admins
+-- only via short-lived signed URLs, never a public link.
+-- ============================================================
+
+create table if not exists public.dev_verifications (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null unique references public.profiles(id) on delete cascade,
+  -- Short, human-searchable id an admin can paste into a search box —
+  -- separate from the internal uuid, e.g. "DEV-482913".
+  request_number text not null unique,
+
+  -- Account information
+  full_legal_name text not null,
+  display_name text not null,
+  country text not null,
+  date_of_birth date not null,
+  phone_number text not null,
+  phone_verified boolean not null default false,
+  profile_photo_url text,
+
+  -- Identity verification (private bucket — see below)
+  gov_id_type text not null check (gov_id_type in ('nid', 'passport', 'driving_license')),
+  gov_id_document_url text not null,
+  selfie_url text not null,
+  identity_match_confirmed boolean not null default false,
+
+  -- Developer information
+  bio text,
+  portfolio_url text,
+  github_url text,
+  previous_projects text,
+  dev_areas text[] not null default '{}',
+
+  -- Legal & accountability
+  agreement_accepted boolean not null default false,
+  ownership_declaration boolean not null default false,
+  ip_responsibility_declaration boolean not null default false,
+  content_policy_accepted boolean not null default false,
+  privacy_policy_accepted boolean not null default false,
+  false_info_agreement boolean not null default false,
+
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reject_reason text,
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists dev_verifications_touch_updated_at on public.dev_verifications;
+create trigger dev_verifications_touch_updated_at
+  before update on public.dev_verifications
+  for each row execute procedure public.touch_updated_at();
+
+create index if not exists dev_verifications_request_number_idx
+  on public.dev_verifications (request_number);
+create index if not exists dev_verifications_status_idx
+  on public.dev_verifications (status);
+
+alter table public.dev_verifications enable row level security;
+
+-- Never public: only the applicant themselves and admins can see this row
+-- at all (this is where all the legal name / DOB / phone / documents are).
+drop policy if exists "Owner and admins see verification requests" on public.dev_verifications;
+create policy "Owner and admins see verification requests"
+  on public.dev_verifications for select
+  using (profile_id = auth.uid() or public.is_admin(auth.uid()));
+
+drop policy if exists "Users submit their own verification request" on public.dev_verifications;
+create policy "Users submit their own verification request"
+  on public.dev_verifications for insert
+  with check (profile_id = auth.uid());
+
+-- A rejected applicant can update their own still-pending/rejected request
+-- to re-apply; admins update to approve/reject.
+drop policy if exists "Owner can update own pending/rejected request" on public.dev_verifications;
+create policy "Owner can update own pending/rejected request"
+  on public.dev_verifications for update
+  using (profile_id = auth.uid() and status in ('pending', 'rejected'));
+
+drop policy if exists "Admins update verification requests" on public.dev_verifications;
+create policy "Admins update verification requests"
+  on public.dev_verifications for update
+  using (public.is_admin(auth.uid()));
+
+-- Generates the next human-searchable request number, e.g. "DEV-482913".
+create or replace function public.generate_dev_request_number()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  candidate text;
+  taken boolean;
+begin
+  loop
+    candidate := 'DEV-' || lpad((floor(random() * 1000000))::text, 6, '0');
+    select exists(select 1 from public.dev_verifications where request_number = candidate) into taken;
+    exit when not taken;
+  end loop;
+  return candidate;
+end;
+$$;
+
+grant execute on function public.generate_dev_request_number() to authenticated;
+
+-- ---- Private storage bucket for ID documents & selfies -------------------
+insert into storage.buckets (id, name, public)
+values ('dev-verification-docs', 'dev-verification-docs', false)
+on conflict (id) do nothing;
+
+-- Applicants can upload only into their own folder (dev-verification-docs/<uid>/...).
+drop policy if exists "Users upload their own verification docs" on storage.objects;
+create policy "Users upload their own verification docs"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'dev-verification-docs'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Reading is restricted to the owner or an admin — never public. Combined
+-- with the bucket itself being private, a raw storage URL for these files
+-- is useless without a signed URL minted server-side for an authorized
+-- viewer (see getSignedDevDocUrl in the app).
+drop policy if exists "Owner and admins read verification docs" on storage.objects;
+create policy "Owner and admins read verification docs"
+  on storage.objects for select
+  using (
+    bucket_id = 'dev-verification-docs'
+    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
+  );
+
+-- Approving/rejecting a verification request keeps profiles.dev_status in
+-- sync automatically, so the existing dev-status notification trigger
+-- (see section 16/17) still fires without the admin action needing to
+-- update two tables by hand.
+create or replace function public.sync_dev_status_from_verification()
+returns trigger as $$
+begin
+  if new.status = 'approved' and old.status is distinct from 'approved' then
+    update public.profiles
+    set dev_status = 'verified', dev_reject_reason = null
+    where id = new.profile_id;
+  elsif new.status = 'rejected' and old.status is distinct from 'rejected' then
+    update public.profiles
+    set dev_status = 'rejected', dev_reject_reason = new.reject_reason
+    where id = new.profile_id;
+  end if;
+  return null;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_dev_verification_status_changed on public.dev_verifications;
+create trigger on_dev_verification_status_changed
+  after update on public.dev_verifications
+  for each row execute procedure public.sync_dev_status_from_verification();
+
+-- Public-safe subset of a verification (display name + country only —
+-- never legal name, DOB, phone, or documents) gets copied onto the
+-- already-publicly-readable profiles row on approval, so the public
+-- profile page never needs to touch the locked-down dev_verifications
+-- table at all.
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists country text;
+
+create or replace function public.sync_dev_status_from_verification()
+returns trigger as $$
+begin
+  if new.status = 'approved' and old.status is distinct from 'approved' then
+    update public.profiles
+    set dev_status = 'verified',
+        dev_reject_reason = null,
+        display_name = new.display_name,
+        country = new.country
+    where id = new.profile_id;
+  elsif new.status = 'rejected' and old.status is distinct from 'rejected' then
+    update public.profiles
+    set dev_status = 'rejected', dev_reject_reason = new.reject_reason
+    where id = new.profile_id;
+  end if;
+  return null;
+end;
+$$ language plpgsql security definer;
+
+-- Realtime, scoped to exactly what section 19 needs (per the "only these
+-- specific pages need push/pull, nothing else" requirement): the admin
+-- inbox watches for new pending requests, and the applicant's own
+-- /apply-dev page watches its own profiles row for a status change.
+alter publication supabase_realtime add table public.dev_verifications;
+alter publication supabase_realtime add table public.profiles;

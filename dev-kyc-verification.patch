@@ -1,0 +1,1373 @@
+diff --git a/src/app/admin/developers/actions.ts b/src/app/admin/developers/actions.ts
+index cde589f..87d799a 100644
+--- a/src/app/admin/developers/actions.ts
++++ b/src/app/admin/developers/actions.ts
+@@ -5,25 +5,43 @@ import { redirect } from "next/navigation";
+ import { createClient } from "@/lib/supabase/server";
+ import { safeError } from "@/lib/errors";
+ 
+-export async function approveDevApplication(formData: FormData) {
++export async function approveDevVerification(formData: FormData) {
+   const supabase = await createClient();
+   const id = formData.get("id") as string;
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
+ 
++  // identity_match_confirmed is a deliberate manual step — the admin has
++  // to explicitly tick "I compared the ID and selfie myself" before this
++  // action is even reachable (see the form in page.tsx), not just click
++  // one button through.
+   const { error } = await supabase
+-    .from("profiles")
+-    .update({ dev_status: "verified", dev_reject_reason: null })
++    .from("dev_verifications")
++    .update({
++      status: "approved",
++      identity_match_confirmed: true,
++      reviewed_by: user?.id ?? null,
++      reviewed_at: new Date().toISOString(),
++    })
+     .eq("id", id);
++  // profiles.dev_status/display_name/country sync automatically via the
++  // sync_dev_status_from_verification DB trigger.
++
+   if (error) {
+-    redirect(`/admin/developers?error=${encodeURIComponent(safeError("approveDev", error))}`);
++    redirect(`/admin/developers?error=${encodeURIComponent(safeError("approveDevVerification", error))}`);
+   }
+   revalidatePath("/admin/developers");
+   redirect("/admin/developers?saved=1");
+ }
+ 
+-export async function rejectDevApplication(formData: FormData) {
++export async function rejectDevVerification(formData: FormData) {
+   const supabase = await createClient();
+   const id = formData.get("id") as string;
+   const reason = ((formData.get("reason") as string) || "").trim();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
+ 
+   if (!reason) {
+     redirect(
+@@ -32,11 +50,17 @@ export async function rejectDevApplication(formData: FormData) {
+   }
+ 
+   const { error } = await supabase
+-    .from("profiles")
+-    .update({ dev_status: "rejected", dev_reject_reason: reason })
++    .from("dev_verifications")
++    .update({
++      status: "rejected",
++      reject_reason: reason,
++      reviewed_by: user?.id ?? null,
++      reviewed_at: new Date().toISOString(),
++    })
+     .eq("id", id);
++
+   if (error) {
+-    redirect(`/admin/developers?error=${encodeURIComponent(safeError("rejectDev", error))}`);
++    redirect(`/admin/developers?error=${encodeURIComponent(safeError("rejectDevVerification", error))}`);
+   }
+   revalidatePath("/admin/developers");
+   redirect("/admin/developers?saved=1");
+diff --git a/src/app/admin/developers/page.tsx b/src/app/admin/developers/page.tsx
+index 87d8198..262fd71 100644
+--- a/src/app/admin/developers/page.tsx
++++ b/src/app/admin/developers/page.tsx
+@@ -1,88 +1,189 @@
+-import { UserCheck, UserX, Clock } from "lucide-react";
++import { Search, UserCheck, UserX, IdCard, Globe, GitBranch, Link as LinkIcon } from "lucide-react";
+ import { createClient } from "@/lib/supabase/server";
+-import { approveDevApplication, rejectDevApplication } from "@/app/admin/developers/actions";
++import { getSignedDevDocUrl } from "@/lib/devDocSignedUrl";
++import { approveDevVerification, rejectDevVerification } from "@/app/admin/developers/actions";
+ import FeedbackToast from "@/components/FeedbackToast";
+-import type { Profile } from "@/lib/types";
++import DevVerificationRealtimeWatcher from "@/components/DevVerificationRealtimeWatcher";
++import type { DevVerification, Profile } from "@/lib/types";
+ 
+ export default async function AdminDevelopersPage({
+   searchParams,
+ }: {
+-  searchParams: Promise<{ saved?: string; error?: string }>;
++  searchParams: Promise<{ saved?: string; error?: string; q?: string }>;
+ }) {
+-  const { saved, error } = await searchParams;
++  const { saved, error, q } = await searchParams;
+   const supabase = await createClient();
+ 
+-  const { data: pending } = await supabase
+-    .from("profiles")
++  let query = supabase
++    .from("dev_verifications")
+     .select("*")
+-    .eq("dev_status", "pending")
+-    .order("id");
++    .eq("status", "pending")
++    .order("created_at", { ascending: true });
++
++  if (q?.trim()) {
++    const term = q.trim();
++    query = query.or(
++      `request_number.ilike.%${term}%,full_legal_name.ilike.%${term}%,display_name.ilike.%${term}%`
++    );
++  }
++
++  const { data: pending } = await query;
+ 
+   const { data: verified } = await supabase
+     .from("profiles")
+     .select("*")
+     .eq("dev_status", "verified")
+-    .order("full_name");
++    .order("display_name");
++
++  const pendingList = (pending as DevVerification[] | null) ?? [];
++  const docUrls = await Promise.all(
++    pendingList.map(async (v) => ({
++      id: v.id,
++      govId: await getSignedDevDocUrl(supabase, v.gov_id_document_url),
++      selfie: await getSignedDevDocUrl(supabase, v.selfie_url),
++    }))
++  );
+ 
+   return (
+     <div>
++      <DevVerificationRealtimeWatcher />
+       <FeedbackToast
+         saved={saved === "1"}
+         error={error}
+         successMessage="Application updated"
+         redirectTo="/admin/developers"
+       />
+-      <h1 className="font-display text-2xl font-bold">Developer applications</h1>
++      <h1 className="font-display text-2xl font-bold">Developer verification</h1>
+       <p className="mt-1 text-sm text-text-muted">
+-        Review outside developers before they can submit apps, report issues to an
+-        admin, or build a public profile.
++        New requests appear here instantly. Compare the ID and selfie by hand before
++        approving.
+       </p>
+ 
+-      <h2 className="mt-8 flex items-center gap-1.5 font-display text-sm font-semibold text-text-muted">
+-        <Clock size={13} /> Pending ({pending?.length ?? 0})
+-      </h2>
+-      <div className="mt-3 flex flex-col divide-y divide-border border-y border-border">
+-        {pending && pending.length > 0 ? (
+-          (pending as Profile[]).map((p) => (
+-            <div key={p.id} className="flex flex-col gap-3 py-4">
+-              <div>
+-                <p className="font-medium">{p.full_name || "Unnamed"}</p>
+-                {p.dev_application_note && (
+-                  <p className="mt-1 whitespace-pre-wrap text-sm text-text-muted">
+-                    {p.dev_application_note}
+-                  </p>
+-                )}
+-              </div>
+-              <div className="flex flex-wrap items-center gap-2">
+-                <form action={approveDevApplication}>
+-                  <input type="hidden" name="id" value={p.id} />
+-                  <button
+-                    type="submit"
+-                    className="flex items-center gap-1.5 rounded-full bg-success/10 px-4 py-2 text-xs font-medium text-success"
+-                  >
+-                    <UserCheck size={13} /> Approve
+-                  </button>
+-                </form>
+-                <form action={rejectDevApplication} className="flex items-center gap-2">
+-                  <input type="hidden" name="id" value={p.id} />
+-                  <input
+-                    name="reason"
+-                    required
+-                    placeholder="Reason for rejecting…"
+-                    className="aurora-border glass-card rounded-full px-3 py-2 text-xs outline-none"
+-                  />
+-                  <button
+-                    type="submit"
+-                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-danger/10 px-4 py-2 text-xs font-medium text-danger"
+-                  >
+-                    <UserX size={13} /> Reject
+-                  </button>
+-                </form>
++      <form className="mt-6 flex items-center gap-2">
++        <div className="aurora-border glass-card flex w-full max-w-sm items-center gap-2 rounded-full px-4 py-2.5">
++          <Search size={14} className="text-text-muted" />
++          <input
++            type="text"
++            name="q"
++            defaultValue={q}
++            placeholder="Search by request ID or name…"
++            className="w-full bg-transparent text-sm outline-none"
++          />
++        </div>
++      </form>
++
++      <div className="mt-6 flex flex-col gap-5">
++        {pendingList.length > 0 ? (
++          pendingList.map((v) => {
++            const docs = docUrls.find((d) => d.id === v.id);
++            return (
++              <div key={v.id} className="glass-card aurora-border rounded-2xl p-5">
++                <div className="flex flex-wrap items-start justify-between gap-2">
++                  <div>
++                    <p className="font-medium">
++                      {v.display_name}{" "}
++                      <span className="font-mono text-xs text-text-muted">
++                        ({v.full_legal_name})
++                      </span>
++                    </p>
++                    <p className="mt-0.5 font-mono text-xs text-accent">{v.request_number}</p>
++                  </div>
++                  <span className="text-xs text-text-muted">
++                    {v.country} · DOB {v.date_of_birth} · {v.phone_number}
++                  </span>
++                </div>
++
++                <div className="mt-4 grid grid-cols-2 gap-3">
++                  <div>
++                    <p className="mb-1 text-[10px] font-mono uppercase text-text-muted">
++                      {v.gov_id_type.replace("_", " ")}
++                    </p>
++                    {docs?.govId ? (
++                      // eslint-disable-next-line @next/next/no-img-element
++                      <img
++                        src={docs.govId}
++                        alt="Government ID"
++                        className="aurora-border h-28 w-full rounded-xl object-cover"
++                      />
++                    ) : (
++                      <div className="flex h-28 items-center justify-center rounded-xl bg-surface-2 text-xs text-text-muted">
++                        <IdCard size={16} />
++                      </div>
++                    )}
++                  </div>
++                  <div>
++                    <p className="mb-1 text-[10px] font-mono uppercase text-text-muted">Selfie</p>
++                    {docs?.selfie ? (
++                      // eslint-disable-next-line @next/next/no-img-element
++                      <img
++                        src={docs.selfie}
++                        alt="Selfie"
++                        className="aurora-border h-28 w-full rounded-xl object-cover"
++                      />
++                    ) : (
++                      <div className="flex h-28 items-center justify-center rounded-xl bg-surface-2 text-xs text-text-muted">
++                        <IdCard size={16} />
++                      </div>
++                    )}
++                  </div>
++                </div>
++
++                {v.bio && <p className="mt-3 text-sm text-text-muted">{v.bio}</p>}
++                <div className="mt-2 flex flex-wrap gap-3 text-xs text-text-muted">
++                  {v.portfolio_url && (
++                    <a href={v.portfolio_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent underline">
++                      <LinkIcon size={11} /> Portfolio
++                    </a>
++                  )}
++                  {v.github_url && (
++                    <a href={v.github_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent underline">
++                      <GitBranch size={11} /> GitHub
++                    </a>
++                  )}
++                  {v.dev_areas?.length > 0 && (
++                    <span className="flex items-center gap-1">
++                      <Globe size={11} /> {v.dev_areas.join(", ")}
++                    </span>
++                  )}
++                </div>
++
++                <div className="mt-4 flex flex-wrap items-center gap-2">
++                  <form action={approveDevVerification} className="flex items-center gap-2">
++                    <input type="hidden" name="id" value={v.id} />
++                    <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
++                      <input type="checkbox" required className="h-3.5 w-3.5 accent-success" />
++                      I compared the ID and selfie myself
++                    </label>
++                    <button
++                      type="submit"
++                      className="flex shrink-0 items-center gap-1.5 rounded-full bg-success/10 px-4 py-2 text-xs font-medium text-success"
++                    >
++                      <UserCheck size={13} /> Approve
++                    </button>
++                  </form>
++                  <form action={rejectDevVerification} className="flex items-center gap-2">
++                    <input type="hidden" name="id" value={v.id} />
++                    <input
++                      name="reason"
++                      required
++                      placeholder="Reason for rejecting…"
++                      className="aurora-border glass-card rounded-full px-3 py-2 text-xs outline-none"
++                    />
++                    <button
++                      type="submit"
++                      className="flex shrink-0 items-center gap-1.5 rounded-full bg-danger/10 px-4 py-2 text-xs font-medium text-danger"
++                    >
++                      <UserX size={13} /> Reject
++                    </button>
++                  </form>
++                </div>
+               </div>
+-            </div>
+-          ))
++            );
++          })
+         ) : (
+-          <p className="py-10 text-center text-text-muted">No pending applications.</p>
++          <p className="py-10 text-center text-text-muted">
++            {q ? "No matching requests." : "No pending applications."}
++          </p>
+         )}
+       </div>
+ 
+@@ -91,11 +192,9 @@ export default async function AdminDevelopersPage({
+       </h2>
+       <div className="mt-3 flex flex-wrap gap-2">
+         {(verified as Profile[] | null)?.map((p) => (
+-          <span
+-            key={p.id}
+-            className="glass-card aurora-border rounded-full px-3 py-1.5 text-xs"
+-          >
+-            {p.full_name || "Unnamed"}
++          <span key={p.id} className="glass-card aurora-border rounded-full px-3 py-1.5 text-xs">
++            {p.display_name || p.full_name || "Unnamed"}
++            {p.country ? ` · ${p.country}` : ""}
+           </span>
+         ))}
+       </div>
+diff --git a/src/app/apply-dev/actions.ts b/src/app/apply-dev/actions.ts
+index de3b23a..c299fa2 100644
+--- a/src/app/apply-dev/actions.ts
++++ b/src/app/apply-dev/actions.ts
+@@ -7,8 +7,31 @@ import { createClient } from "@/lib/supabase/server";
+ import { checkRateLimit } from "@/lib/rateLimit";
+ import { safeError } from "@/lib/errors";
+ 
+-const applySchema = z.object({
+-  note: z.string().trim().min(10, "Give a bit more detail (at least 10 characters).").max(1000),
++const DEV_AREAS = ["android", "ios", "web", "desktop", "backend", "game_dev", "other"] as const;
++
++const verificationSchema = z.object({
++  full_legal_name: z.string().trim().min(2, "Enter your full legal name.").max(120),
++  display_name: z.string().trim().min(2, "Enter a display name.").max(60),
++  country: z.string().trim().min(2, "Select your country.").max(60),
++  date_of_birth: z.string().refine((v) => {
++    const age = (Date.now() - new Date(v).getTime()) / (365.25 * 24 * 3600 * 1000);
++    return age >= 16 && age < 120;
++  }, "You must be at least 16 years old."),
++  phone_number: z.string().trim().min(6, "Enter a valid phone number.").max(25),
++  gov_id_type: z.enum(["nid", "passport", "driving_license"]),
++  gov_id_document_path: z.string().min(1, "Upload your government ID."),
++  selfie_path: z.string().min(1, "Upload a selfie."),
++  bio: z.string().trim().max(1000).nullable(),
++  portfolio_url: z.string().trim().url().max(300).nullable().or(z.literal("")),
++  github_url: z.string().trim().url().max(300).nullable().or(z.literal("")),
++  previous_projects: z.string().trim().max(1000).nullable(),
++  dev_areas: z.array(z.enum(DEV_AREAS)).min(1, "Pick at least one area of development."),
++  agreement_accepted: z.literal(true, { message: "You must accept the Developer Agreement." }),
++  ownership_declaration: z.literal(true, { message: "You must confirm the app ownership declaration." }),
++  ip_responsibility_declaration: z.literal(true, { message: "You must accept IP responsibility." }),
++  content_policy_accepted: z.literal(true, { message: "You must accept the content & malware policy." }),
++  privacy_policy_accepted: z.literal(true, { message: "You must accept the Privacy Policy." }),
++  false_info_agreement: z.literal(true, { message: "You must agree to the false-information clause." }),
+ });
+ 
+ export async function applyForDev(formData: FormData) {
+@@ -27,22 +50,97 @@ export async function applyForDev(formData: FormData) {
+     redirect(`/apply-dev?error=${encodeURIComponent(rateLimitError!)}`);
+   }
+ 
+-  const parsed = applySchema.safeParse({ note: formData.get("note") as string });
++  const parsed = verificationSchema.safeParse({
++    full_legal_name: formData.get("full_legal_name") as string,
++    display_name: formData.get("display_name") as string,
++    country: formData.get("country") as string,
++    date_of_birth: formData.get("date_of_birth") as string,
++    phone_number: formData.get("phone_number") as string,
++    gov_id_type: formData.get("gov_id_type") as string,
++    gov_id_document_path: formData.get("gov_id_document_path") as string,
++    selfie_path: formData.get("selfie_path") as string,
++    bio: ((formData.get("bio") as string) || "").trim() || null,
++    portfolio_url: (formData.get("portfolio_url") as string) || "",
++    github_url: (formData.get("github_url") as string) || "",
++    previous_projects: ((formData.get("previous_projects") as string) || "").trim() || null,
++    dev_areas: formData.getAll("dev_areas") as string[],
++    agreement_accepted: formData.get("agreement_accepted") === "on",
++    ownership_declaration: formData.get("ownership_declaration") === "on",
++    ip_responsibility_declaration: formData.get("ip_responsibility_declaration") === "on",
++    content_policy_accepted: formData.get("content_policy_accepted") === "on",
++    privacy_policy_accepted: formData.get("privacy_policy_accepted") === "on",
++    false_info_agreement: formData.get("false_info_agreement") === "on",
++  });
++
+   if (!parsed.success) {
+-    redirect(`/apply-dev?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "")}`);
++    redirect(`/apply-dev?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input.")}`);
++  }
++  const fields = parsed.data!;
++
++  // Re-applying after a rejection updates the same request rather than
++  // creating a new one, so the request number stays stable.
++  const { data: existing } = await supabase
++    .from("dev_verifications")
++    .select("id, status")
++    .eq("profile_id", user.id)
++    .maybeSingle();
++
++  if (existing && existing.status === "pending") {
++    redirect(`/apply-dev?error=${encodeURIComponent("You already have a request being reviewed.")}`);
+   }
+ 
+-  const { error } = await supabase
++  const payload = {
++    full_legal_name: fields.full_legal_name,
++    display_name: fields.display_name,
++    country: fields.country,
++    date_of_birth: fields.date_of_birth,
++    phone_number: fields.phone_number,
++    gov_id_type: fields.gov_id_type,
++    gov_id_document_url: fields.gov_id_document_path,
++    selfie_url: fields.selfie_path,
++    bio: fields.bio,
++    portfolio_url: fields.portfolio_url || null,
++    github_url: fields.github_url || null,
++    previous_projects: fields.previous_projects,
++    dev_areas: fields.dev_areas,
++    agreement_accepted: fields.agreement_accepted,
++    ownership_declaration: fields.ownership_declaration,
++    ip_responsibility_declaration: fields.ip_responsibility_declaration,
++    content_policy_accepted: fields.content_policy_accepted,
++    privacy_policy_accepted: fields.privacy_policy_accepted,
++    false_info_agreement: fields.false_info_agreement,
++    status: "pending" as const,
++    reject_reason: null,
++    identity_match_confirmed: false,
++  };
++
++  if (existing) {
++    const { error } = await supabase
++      .from("dev_verifications")
++      .update(payload)
++      .eq("id", existing.id);
++    if (error) redirect(`/apply-dev?error=${encodeURIComponent(safeError("applyForDev:update", error))}`);
++  } else {
++    const { data: requestNumber } = await supabase.rpc("generate_dev_request_number");
++    const { error } = await supabase.from("dev_verifications").insert({
++      ...payload,
++      profile_id: user.id,
++      request_number: requestNumber,
++    });
++    if (error) redirect(`/apply-dev?error=${encodeURIComponent(safeError("applyForDev:insert", error))}`);
++  }
++
++  // Keep profiles.dev_status in step immediately — the approve/reject
++  // transition back out of 'pending' is handled by the DB trigger
++  // (sync_dev_status_from_verification), which also fires the existing
++  // notification trigger since it only triggers off a 'pending' starting
++  // point.
++  const { error: statusError } = await supabase
+     .from("profiles")
+-    .update({
+-      dev_status: "pending",
+-      dev_application_note: parsed.data!.note,
+-      dev_reject_reason: null,
+-    })
++    .update({ dev_status: "pending" })
+     .eq("id", user.id);
+-
+-  if (error) {
+-    redirect(`/apply-dev?error=${encodeURIComponent(safeError("applyForDev", error))}`);
++  if (statusError) {
++    redirect(`/apply-dev?error=${encodeURIComponent(safeError("applyForDev:status", statusError))}`);
+   }
+ 
+   revalidatePath("/apply-dev");
+diff --git a/src/app/apply-dev/page.tsx b/src/app/apply-dev/page.tsx
+index 6463ac5..55cb81c 100644
+--- a/src/app/apply-dev/page.tsx
++++ b/src/app/apply-dev/page.tsx
+@@ -1,10 +1,24 @@
+ import { redirect } from "next/navigation";
+ import Link from "next/link";
+-import { ShieldCheck, Clock, XCircle, CheckCircle2 } from "lucide-react";
++import { ShieldCheck, Clock, XCircle, CheckCircle2, IdCard } from "lucide-react";
+ import { createClient } from "@/lib/supabase/server";
+ import { applyForDev } from "@/app/apply-dev/actions";
+ import FeedbackToast from "@/components/FeedbackToast";
+-import type { Profile } from "@/lib/types";
++import DevStatusRealtimeWatcher from "@/components/DevStatusRealtimeWatcher";
++import PrivateDocFileInput from "@/components/PrivateDocFileInput";
++import { UploadTrackerProvider } from "@/lib/uploadTracker";
++import SubmitButton from "@/components/SubmitButton";
++import type { DevVerification, Profile } from "@/lib/types";
++
++const DEV_AREAS: { value: string; label: string }[] = [
++  { value: "android", label: "Android" },
++  { value: "ios", label: "iOS" },
++  { value: "web", label: "Web" },
++  { value: "desktop", label: "Desktop" },
++  { value: "backend", label: "Backend" },
++  { value: "game_dev", label: "Game Dev" },
++  { value: "other", label: "Other" },
++];
+ 
+ export default async function ApplyDevPage({
+   searchParams,
+@@ -18,22 +32,23 @@ export default async function ApplyDevPage({
+   } = await supabase.auth.getUser();
+   if (!user) redirect("/login");
+ 
+-  const { data: profile } = await supabase
+-    .from("profiles")
+-    .select("*")
+-    .eq("id", user.id)
+-    .single();
++  const [{ data: profile }, { data: verification }] = await Promise.all([
++    supabase.from("profiles").select("*").eq("id", user.id).single(),
++    supabase.from("dev_verifications").select("*").eq("profile_id", user.id).maybeSingle(),
++  ]);
+   const p = profile as Profile;
++  const v = verification as DevVerification | null;
+ 
+   return (
+     <div className="mx-auto max-w-xl px-6 py-14">
++      <DevStatusRealtimeWatcher userId={user.id} />
+       <FeedbackToast
+         error={error}
+         saved={saved === "1"}
+         successMessage="Application submitted."
+         redirectTo="/apply-dev"
+       />
+-      <h1 className="font-display text-2xl font-bold">Developer access</h1>
++      <h1 className="font-display text-2xl font-bold">Developer verification</h1>
+       <p className="mt-1 text-sm text-text-muted">
+         Verified developers can submit apps, report issues directly to an admin, and
+         build a public developer profile.
+@@ -61,74 +76,215 @@ export default async function ApplyDevPage({
+           <div>
+             <p className="font-medium">Verifying…</p>
+             <p className="mt-1 text-sm text-text-muted">
+-              An admin is reviewing your application. You&apos;ll get a notification
+-              once there&apos;s a decision.
++              Our review team is checking your details. This page updates itself the
++              instant there&apos;s a decision — no need to refresh.
+             </p>
++            {v?.request_number && (
++              <p className="mt-2 font-mono text-xs text-text-muted">
++                Request ID: {v.request_number}
++              </p>
++            )}
+           </div>
+         </div>
+       )}
+ 
+       {p.dev_status === "rejected" && (
+-        <div className="glass-card mt-8 flex flex-col gap-3 rounded-2xl border border-danger/40 bg-danger/5 p-5">
+-          <div className="flex items-start gap-3">
+-            <XCircle size={20} className="mt-0.5 shrink-0 text-danger" />
+-            <div>
+-              <p className="font-medium">Your application wasn&apos;t approved.</p>
+-              {p.dev_reject_reason && (
+-                <p className="mt-1 text-sm text-text-muted">
+-                  Reason from the review team: &quot;{p.dev_reject_reason}&quot;
+-                </p>
+-              )}
+-            </div>
++        <div className="glass-card mt-8 flex items-start gap-3 rounded-2xl border border-danger/40 bg-danger/5 p-5">
++          <XCircle size={20} className="mt-0.5 shrink-0 text-danger" />
++          <div>
++            <p className="font-medium">Your application wasn&apos;t approved.</p>
++            {p.dev_reject_reason && (
++              <p className="mt-1 text-sm text-text-muted">
++                Reason from the review team: &quot;{p.dev_reject_reason}&quot;
++              </p>
++            )}
++            <p className="mt-1 text-xs text-text-muted">
++              Update your details below and re-apply — your request keeps the same ID.
++            </p>
+           </div>
+-          <form action={applyForDev} className="flex flex-col gap-3">
+-            <textarea
+-              name="note"
+-              required
+-              rows={4}
+-              placeholder="Tell us about yourself and what you'd like to build or maintain on NexApp…"
+-              className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
+-            />
+-            <button
+-              type="submit"
+-              className="self-start rounded-full neu-raised px-5 py-2.5 text-sm font-medium text-accent"
+-            >
+-              Re-apply
+-            </button>
+-          </form>
+         </div>
+       )}
+ 
+-      {p.dev_status === "none" && (
+-        <form action={applyForDev} className="mt-8 flex flex-col gap-4">
+-          <div className="glass-card aurora-border rounded-xl p-4 text-xs text-text-muted">
+-            <div className="flex items-start gap-2">
+-              <ShieldCheck size={18} className="mt-0.5 shrink-0 text-accent" />
+-              <p>
+-                We verify every developer before granting access, so the people using
+-                NexApp can trust who&apos;s behind the apps they install.
+-              </p>
++      {(p.dev_status === "none" || p.dev_status === "rejected") && (
++        <UploadTrackerProvider>
++          <form action={applyForDev} className="mt-8 flex flex-col gap-6">
++            <div className="glass-card aurora-border rounded-xl p-4 text-xs text-text-muted">
++              <div className="flex items-start gap-2">
++                <ShieldCheck size={18} className="mt-0.5 shrink-0 text-accent" />
++                <p>
++                  We verify every developer&apos;s identity before granting access, so
++                  the people using NexApp can trust who&apos;s behind the apps they
++                  install. Your legal name, ID, phone, and documents are never shown
++                  publicly — only your display name and country are.
++                </p>
++              </div>
+             </div>
+-          </div>
+-          <div>
+-            <label className="mb-1.5 block text-xs font-mono text-text-muted">
+-              Tell us about yourself
+-            </label>
+-            <textarea
+-              name="note"
+-              required
+-              rows={5}
+-              placeholder="What do you build? Any apps, repos, or portfolio links worth mentioning?"
+-              className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
+-            />
+-          </div>
+-          <button
+-            type="submit"
+-            className="self-start rounded-full neu-raised px-6 py-2.5 text-sm font-medium text-accent"
+-          >
+-            Apply for developer access
+-          </button>
+-        </form>
++
++            <section className="flex flex-col gap-4">
++              <h2 className="font-display text-sm font-semibold">Account information</h2>
++              <input
++                name="full_legal_name"
++                required
++                placeholder="Full legal name (as on your ID)"
++                defaultValue={v?.full_legal_name ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <input
++                name="display_name"
++                required
++                placeholder="Developer / display name (shown publicly)"
++                defaultValue={v?.display_name ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <div className="grid grid-cols-2 gap-4">
++                <input
++                  name="country"
++                  required
++                  placeholder="Country"
++                  defaultValue={v?.country ?? ""}
++                  className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++                />
++                <input
++                  type="date"
++                  name="date_of_birth"
++                  required
++                  defaultValue={v?.date_of_birth ?? ""}
++                  className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++                />
++              </div>
++              <input
++                name="phone_number"
++                type="tel"
++                required
++                placeholder="Phone number"
++                defaultValue={v?.phone_number ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <p className="text-[11px] text-text-muted">
++                Signed in as {user.email} — used as your verified email automatically.
++              </p>
++            </section>
++
++            <section className="flex flex-col gap-4">
++              <h2 className="font-display text-sm font-semibold">Identity verification</h2>
++              <select
++                name="gov_id_type"
++                required
++                defaultValue={v?.gov_id_type ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              >
++                <option value="" disabled>
++                  Government ID type
++                </option>
++                <option value="nid">National ID (NID)</option>
++                <option value="passport">Passport</option>
++                <option value="driving_license">Driving License</option>
++              </select>
++              <PrivateDocFileInput
++                fieldName="gov_id_document_path"
++                label="Government-issued ID (photo of the document)"
++                folder="gov_id"
++              />
++              <PrivateDocFileInput
++                fieldName="selfie_path"
++                label="Selfie (for our team to match against your ID)"
++                folder="selfie"
++              />
++              <div className="flex items-start gap-2 rounded-xl bg-surface-2 p-3 text-xs text-text-muted">
++                <IdCard size={16} className="mt-0.5 shrink-0 text-accent" />
++                <p>
++                  A member of our review team compares your ID and selfie by hand before
++                  approving — this isn&apos;t an automated check.
++                </p>
++              </div>
++            </section>
++
++            <section className="flex flex-col gap-4">
++              <h2 className="font-display text-sm font-semibold">Developer information</h2>
++              <textarea
++                name="bio"
++                rows={3}
++                placeholder="Developer bio"
++                defaultValue={v?.bio ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <input
++                name="portfolio_url"
++                type="url"
++                placeholder="Portfolio website (optional)"
++                defaultValue={v?.portfolio_url ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <input
++                name="github_url"
++                type="url"
++                placeholder="GitHub / GitLab (optional)"
++                defaultValue={v?.github_url ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <textarea
++                name="previous_projects"
++                rows={2}
++                placeholder="Previous apps / projects (optional)"
++                defaultValue={v?.previous_projects ?? ""}
++                className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
++              />
++              <div>
++                <p className="mb-2 text-xs font-mono text-text-muted">
++                  Areas of development
++                </p>
++                <div className="flex flex-wrap gap-2">
++                  {DEV_AREAS.map((area) => (
++                    <label
++                      key={area.value}
++                      className="glass-card aurora-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs"
++                    >
++                      <input
++                        type="checkbox"
++                        name="dev_areas"
++                        value={area.value}
++                        defaultChecked={v?.dev_areas?.includes(area.value as never)}
++                        className="h-3.5 w-3.5 accent-accent"
++                      />
++                      {area.label}
++                    </label>
++                  ))}
++                </div>
++              </div>
++            </section>
++
++            <section className="flex flex-col gap-2.5">
++              <h2 className="font-display text-sm font-semibold">
++                Legal &amp; accountability
++              </h2>
++              {[
++                ["agreement_accepted", "I accept the Developer Agreement."],
++                ["ownership_declaration", "I declare I own or have the rights to the apps I submit."],
++                ["ip_responsibility_declaration", "I take responsibility for any copyright/IP claims on my submissions."],
++                ["content_policy_accepted", "I accept NexApp's content & malware policy."],
++                ["privacy_policy_accepted", "I accept the Privacy Policy requirements."],
++                ["false_info_agreement", "I understand providing false information may lead to account suspension."],
++              ].map(([name, label]) => (
++                <label key={name} className="flex items-start gap-2.5 text-xs text-text-muted">
++                  <input
++                    type="checkbox"
++                    name={name}
++                    required
++                    defaultChecked={
++                      v ? (v[name as keyof DevVerification] as boolean) : false
++                    }
++                    className="mt-0.5 h-4 w-4 accent-accent"
++                  />
++                  {label}
++                </label>
++              ))}
++            </section>
++
++            <SubmitButton pendingLabel="Submitting…">
++              {p.dev_status === "rejected" ? "Re-submit for review" : "Submit for verification"}
++            </SubmitButton>
++          </form>
++        </UploadTrackerProvider>
+       )}
+     </div>
+   );
+diff --git a/src/app/developers/[id]/page.tsx b/src/app/developers/[id]/page.tsx
+index 950d83f..8fbc794 100644
+--- a/src/app/developers/[id]/page.tsx
++++ b/src/app/developers/[id]/page.tsx
+@@ -17,7 +17,9 @@ export default async function DeveloperProfilePage({
+ 
+   const { data: profile } = await supabase
+     .from("profiles")
+-    .select("id, full_name, avatar_url, role, dev_status, profile_headline, profile_bio")
++    .select(
++      "id, full_name, display_name, country, avatar_url, role, dev_status, profile_headline, profile_bio"
++    )
+     .eq("id", id)
+     .maybeSingle();
+ 
+@@ -44,7 +46,7 @@ export default async function DeveloperProfilePage({
+     .eq("status", "published")
+     .order("downloads_count", { ascending: false });
+ 
+-  const name = profile.full_name || "Unnamed";
++  const name = profile.display_name || profile.full_name || "Unnamed";
+   const initial = name.charAt(0).toUpperCase();
+ 
+   return (
+@@ -74,6 +76,9 @@ export default async function DeveloperProfilePage({
+         {nexId && (
+           <p className="mt-2 font-mono text-xs text-text-muted">Nex ID: {nexId}</p>
+         )}
++        {profile.country && (
++          <p className="mt-1 text-xs text-text-muted">{profile.country}</p>
++        )}
+         {profile.profile_headline && (
+           <p className="mt-2 text-sm text-text-muted">{profile.profile_headline}</p>
+         )}
+diff --git a/src/components/DevStatusRealtimeWatcher.tsx b/src/components/DevStatusRealtimeWatcher.tsx
+new file mode 100644
+index 0000000..412db6f
+--- /dev/null
++++ b/src/components/DevStatusRealtimeWatcher.tsx
+@@ -0,0 +1,30 @@
++"use client";
++
++import { useEffect } from "react";
++import { useRouter } from "next/navigation";
++import { createClient } from "@/lib/supabase/client";
++
++// No UI of its own — just watches this user's profile row for a dev_status
++// change (set by an admin approving/rejecting) and calls router.refresh()
++// the instant it happens, so the page updates itself without the person
++// needing to reload.
++export default function DevStatusRealtimeWatcher({ userId }: { userId: string }) {
++  const router = useRouter();
++
++  useEffect(() => {
++    const supabase = createClient();
++    const channel = supabase
++      .channel(`dev-status-${userId}`)
++      .on(
++        "postgres_changes",
++        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
++        () => router.refresh()
++      )
++      .subscribe();
++    return () => {
++      supabase.removeChannel(channel);
++    };
++  }, [userId, router]);
++
++  return null;
++}
+diff --git a/src/components/DevVerificationRealtimeWatcher.tsx b/src/components/DevVerificationRealtimeWatcher.tsx
+new file mode 100644
+index 0000000..00b1ff3
+--- /dev/null
++++ b/src/components/DevVerificationRealtimeWatcher.tsx
+@@ -0,0 +1,26 @@
++"use client";
++
++import { useEffect } from "react";
++import { useRouter } from "next/navigation";
++import { createClient } from "@/lib/supabase/client";
++
++export default function DevVerificationRealtimeWatcher() {
++  const router = useRouter();
++
++  useEffect(() => {
++    const supabase = createClient();
++    const channel = supabase
++      .channel("dev-verifications-admin")
++      .on(
++        "postgres_changes",
++        { event: "INSERT", schema: "public", table: "dev_verifications" },
++        () => router.refresh()
++      )
++      .subscribe();
++    return () => {
++      supabase.removeChannel(channel);
++    };
++  }, [router]);
++
++  return null;
++}
+diff --git a/src/components/PrivateDocFileInput.tsx b/src/components/PrivateDocFileInput.tsx
+new file mode 100644
+index 0000000..18e1299
+--- /dev/null
++++ b/src/components/PrivateDocFileInput.tsx
+@@ -0,0 +1,75 @@
++"use client";
++
++import { useState } from "react";
++import { ShieldAlert } from "lucide-react";
++import { uploadPrivateDoc } from "@/lib/uploadClient";
++import UploadProgress, { type UploadState } from "@/components/UploadProgress";
++import { useUploadBusySetter } from "@/lib/uploadTracker";
++
++export default function PrivateDocFileInput({
++  fieldName,
++  label,
++  folder,
++}: {
++  fieldName: string;
++  label: string;
++  folder: "gov_id" | "selfie";
++}) {
++  const [path, setPath] = useState<string | null>(null);
++  const [preview, setPreview] = useState<string | null>(null);
++  const [state, setState] = useState<UploadState>({ status: "idle" });
++  const setBusy = useUploadBusySetter(fieldName);
++
++  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0];
++    if (!file) return;
++
++    setPreview(URL.createObjectURL(file));
++    setState({ status: "uploading", pct: 0 });
++    setBusy(true);
++
++    try {
++      const storagePath = await uploadPrivateDoc(file, {
++        folder,
++        onProgress: (pct) => setState({ status: "uploading", pct }),
++      });
++      setPath(storagePath);
++      setState({ status: "done" });
++    } catch (err) {
++      setState({ status: "error", message: (err as Error).message });
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  return (
++    <div className="flex flex-col gap-2">
++      <input type="hidden" name={fieldName} value={path ?? ""} />
++      <label className="mb-0.5 block text-xs font-mono text-text-muted">{label}</label>
++      <div className="flex items-center gap-3">
++        <div className="glass-card aurora-border flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl">
++          {preview ? (
++            // eslint-disable-next-line @next/next/no-img-element
++            <img src={preview} alt="" className="h-full w-full object-cover" />
++          ) : (
++            <ShieldAlert size={18} className="text-text-muted" />
++          )}
++        </div>
++        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
++          <input
++            type="file"
++            accept="image/png,image/jpeg"
++            required
++            onChange={handleChange}
++            className="aurora-border glass-card w-full rounded-xl px-4 py-2.5 text-sm outline-none file:mr-3 file:rounded-full file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-text"
++          />
++          <UploadProgress state={state} />
++        </div>
++      </div>
++      <p className="text-[11px] text-text-muted">
++        Stored privately — visible only to you and our verified review team, never
++        published or shown on your public profile.
++      </p>
++    </div>
++  );
++}
+diff --git a/src/lib/devDocSignedUrl.ts b/src/lib/devDocSignedUrl.ts
+new file mode 100644
+index 0000000..ac01396
+--- /dev/null
++++ b/src/lib/devDocSignedUrl.ts
+@@ -0,0 +1,20 @@
++import type { createClient } from "@/lib/supabase/server";
++
++const PRIVATE_DOC_BUCKET = "dev-verification-docs";
++
++// The dev-verification-docs bucket is private — this is the only way to
++// ever view a document in it. The signed URL expires quickly (5 minutes)
++// and storage RLS still requires the caller to be the doc's owner or an
++// admin, so this never leaks a document to someone who shouldn't see it.
++export async function getSignedDevDocUrl(
++  supabase: Awaited<ReturnType<typeof createClient>>,
++  path: string | null,
++  expiresInSeconds = 300
++): Promise<string | null> {
++  if (!path) return null;
++  const { data, error } = await supabase.storage
++    .from(PRIVATE_DOC_BUCKET)
++    .createSignedUrl(path, expiresInSeconds);
++  if (error || !data) return null;
++  return data.signedUrl;
++}
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+index 40b7c2f..67c3125 100644
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -69,6 +69,49 @@ export type Review = {
+   profiles?: { full_name: string | null; avatar_url: string | null } | null;
+ };
+ 
++export type DevAreaTag =
++  | "android"
++  | "ios"
++  | "web"
++  | "desktop"
++  | "backend"
++  | "game_dev"
++  | "other";
++
++export type DevVerification = {
++  id: string;
++  profile_id: string;
++  request_number: string;
++  full_legal_name: string;
++  display_name: string;
++  country: string;
++  date_of_birth: string;
++  phone_number: string;
++  phone_verified: boolean;
++  profile_photo_url: string | null;
++  gov_id_type: "nid" | "passport" | "driving_license";
++  gov_id_document_url: string;
++  selfie_url: string;
++  identity_match_confirmed: boolean;
++  bio: string | null;
++  portfolio_url: string | null;
++  github_url: string | null;
++  previous_projects: string | null;
++  dev_areas: DevAreaTag[];
++  agreement_accepted: boolean;
++  ownership_declaration: boolean;
++  ip_responsibility_declaration: boolean;
++  content_policy_accepted: boolean;
++  privacy_policy_accepted: boolean;
++  false_info_agreement: boolean;
++  status: "pending" | "approved" | "rejected";
++  reject_reason: string | null;
++  reviewed_by: string | null;
++  reviewed_at: string | null;
++  created_at: string;
++  updated_at: string;
++};
++
+ export type Profile = {
+   id: string;
+   full_name: string | null;
+@@ -79,6 +122,8 @@ export type Profile = {
+   dev_reject_reason: string | null;
+   profile_headline: string | null;
+   profile_bio: string | null;
++  display_name: string | null;
++  country: string | null;
+ };
+ 
+ // The separate `sources` table/admin section is retired — github_url and
+diff --git a/src/lib/uploadClient.ts b/src/lib/uploadClient.ts
+index 5dea7e6..930256c 100644
+--- a/src/lib/uploadClient.ts
++++ b/src/lib/uploadClient.ts
+@@ -43,6 +43,7 @@ export async function validateImageFileClient(
+ // fetch) specifically because XHR exposes real `upload.onprogress` byte
+ // events — this is genuine transfer progress, not a simulated timer.
+ function uploadWithProgress(opts: {
++  bucket: string;
+   path: string;
+   file: File;
+   accessToken: string;
+@@ -51,7 +52,7 @@ function uploadWithProgress(opts: {
+ }): Promise<void> {
+   return new Promise((resolve, reject) => {
+     const xhr = new XMLHttpRequest();
+-    const url = `${opts.supabaseUrl}/storage/v1/object/${ASSET_BUCKET}/${opts.path}`;
++    const url = `${opts.supabaseUrl}/storage/v1/object/${opts.bucket}/${opts.path}`;
+     xhr.open("POST", url);
+     xhr.setRequestHeader("Authorization", `Bearer ${opts.accessToken}`);
+     xhr.setRequestHeader("x-upsert", "true");
+@@ -98,6 +99,7 @@ export async function uploadImage(
+       : `${opts.folder}/${random}.${ext}`;
+ 
+   await uploadWithProgress({
++    bucket: ASSET_BUCKET,
+     path,
+     file,
+     accessToken: session.access_token,
+@@ -108,3 +110,43 @@ export async function uploadImage(
+   const { data } = supabase.storage.from(ASSET_BUCKET).getPublicUrl(path);
+   return data.publicUrl;
+ }
++
++const PRIVATE_DOC_BUCKET = "dev-verification-docs";
++
++// Government ID / selfie uploads for developer verification. These go into
++// a PRIVATE bucket (not app-assets) — the return value is a storage PATH,
++// not a public URL, because the bucket has no public access at all. The
++// only way to ever view one of these files is a short-lived signed URL
++// minted server-side for an authorized viewer (the owner or an admin) —
++// see src/lib/devDocSignedUrl.ts.
++export async function uploadPrivateDoc(
++  file: File,
++  opts: {
++    folder: "gov_id" | "selfie";
++    onProgress?: (pct: number) => void;
++  }
++): Promise<string> {
++  const validation = await validateImageFileClient(file);
++  if (!validation.ok) throw new Error(validation.error);
++
++  const supabase = createClient();
++  const {
++    data: { session },
++  } = await supabase.auth.getSession();
++  if (!session) throw new Error("You must be signed in to upload.");
++
++  const ext = file.type === "image/png" ? "png" : "jpg";
++  const random = crypto.randomUUID();
++  const path = `${session.user.id}/${opts.folder}/${random}.${ext}`;
++
++  await uploadWithProgress({
++    bucket: PRIVATE_DOC_BUCKET,
++    path,
++    file,
++    accessToken: session.access_token,
++    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    onProgress: opts.onProgress ?? (() => {}),
++  });
++
++  return path;
++}
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index 95ad011..f020777 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -1107,3 +1107,203 @@ drop trigger if exists on_issue_request_updated on public.issue_requests;
+ create trigger on_issue_request_updated
+   after update on public.issue_requests
+   for each row execute procedure public.notify_issue_request_changed();
++
++-- ============================================================
++-- 18. Full developer identity verification (KYC) --------------------------
++-- Replaces the simple "note" application with a proper verification
++-- record: legal identity, government ID, a selfie for a human reviewer to
++-- match against the ID, developer info, and required agreements. This is
++-- sensitive personal data, so it lives in its own table with tight RLS
++-- (owner + admin only, never public) and its documents live in a PRIVATE
++-- storage bucket (not the public app-assets bucket) — served to admins
++-- only via short-lived signed URLs, never a public link.
++-- ============================================================
++
++create table if not exists public.dev_verifications (
++  id uuid primary key default gen_random_uuid(),
++  profile_id uuid not null unique references public.profiles(id) on delete cascade,
++  -- Short, human-searchable id an admin can paste into a search box —
++  -- separate from the internal uuid, e.g. "DEV-482913".
++  request_number text not null unique,
++
++  -- Account information
++  full_legal_name text not null,
++  display_name text not null,
++  country text not null,
++  date_of_birth date not null,
++  phone_number text not null,
++  phone_verified boolean not null default false,
++  profile_photo_url text,
++
++  -- Identity verification (private bucket — see below)
++  gov_id_type text not null check (gov_id_type in ('nid', 'passport', 'driving_license')),
++  gov_id_document_url text not null,
++  selfie_url text not null,
++  identity_match_confirmed boolean not null default false,
++
++  -- Developer information
++  bio text,
++  portfolio_url text,
++  github_url text,
++  previous_projects text,
++  dev_areas text[] not null default '{}',
++
++  -- Legal & accountability
++  agreement_accepted boolean not null default false,
++  ownership_declaration boolean not null default false,
++  ip_responsibility_declaration boolean not null default false,
++  content_policy_accepted boolean not null default false,
++  privacy_policy_accepted boolean not null default false,
++  false_info_agreement boolean not null default false,
++
++  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
++  reject_reason text,
++  reviewed_by uuid references public.profiles(id) on delete set null,
++  reviewed_at timestamptz,
++
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++
++drop trigger if exists dev_verifications_touch_updated_at on public.dev_verifications;
++create trigger dev_verifications_touch_updated_at
++  before update on public.dev_verifications
++  for each row execute procedure public.touch_updated_at();
++
++create index if not exists dev_verifications_request_number_idx
++  on public.dev_verifications (request_number);
++create index if not exists dev_verifications_status_idx
++  on public.dev_verifications (status);
++
++alter table public.dev_verifications enable row level security;
++
++-- Never public: only the applicant themselves and admins can see this row
++-- at all (this is where all the legal name / DOB / phone / documents are).
++drop policy if exists "Owner and admins see verification requests" on public.dev_verifications;
++create policy "Owner and admins see verification requests"
++  on public.dev_verifications for select
++  using (profile_id = auth.uid() or public.is_admin(auth.uid()));
++
++drop policy if exists "Users submit their own verification request" on public.dev_verifications;
++create policy "Users submit their own verification request"
++  on public.dev_verifications for insert
++  with check (profile_id = auth.uid());
++
++-- A rejected applicant can update their own still-pending/rejected request
++-- to re-apply; admins update to approve/reject.
++drop policy if exists "Owner can update own pending/rejected request" on public.dev_verifications;
++create policy "Owner can update own pending/rejected request"
++  on public.dev_verifications for update
++  using (profile_id = auth.uid() and status in ('pending', 'rejected'));
++
++drop policy if exists "Admins update verification requests" on public.dev_verifications;
++create policy "Admins update verification requests"
++  on public.dev_verifications for update
++  using (public.is_admin(auth.uid()));
++
++-- Generates the next human-searchable request number, e.g. "DEV-482913".
++create or replace function public.generate_dev_request_number()
++returns text
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  candidate text;
++  taken boolean;
++begin
++  loop
++    candidate := 'DEV-' || lpad((floor(random() * 1000000))::text, 6, '0');
++    select exists(select 1 from public.dev_verifications where request_number = candidate) into taken;
++    exit when not taken;
++  end loop;
++  return candidate;
++end;
++$$;
++
++grant execute on function public.generate_dev_request_number() to authenticated;
++
++-- ---- Private storage bucket for ID documents & selfies -------------------
++insert into storage.buckets (id, name, public)
++values ('dev-verification-docs', 'dev-verification-docs', false)
++on conflict (id) do nothing;
++
++-- Applicants can upload only into their own folder (dev-verification-docs/<uid>/...).
++drop policy if exists "Users upload their own verification docs" on storage.objects;
++create policy "Users upload their own verification docs"
++  on storage.objects for insert
++  with check (
++    bucket_id = 'dev-verification-docs'
++    and (storage.foldername(name))[1] = auth.uid()::text
++  );
++
++-- Reading is restricted to the owner or an admin — never public. Combined
++-- with the bucket itself being private, a raw storage URL for these files
++-- is useless without a signed URL minted server-side for an authorized
++-- viewer (see getSignedDevDocUrl in the app).
++drop policy if exists "Owner and admins read verification docs" on storage.objects;
++create policy "Owner and admins read verification docs"
++  on storage.objects for select
++  using (
++    bucket_id = 'dev-verification-docs'
++    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
++  );
++
++-- Approving/rejecting a verification request keeps profiles.dev_status in
++-- sync automatically, so the existing dev-status notification trigger
++-- (see section 16/17) still fires without the admin action needing to
++-- update two tables by hand.
++create or replace function public.sync_dev_status_from_verification()
++returns trigger as $$
++begin
++  if new.status = 'approved' and old.status is distinct from 'approved' then
++    update public.profiles
++    set dev_status = 'verified', dev_reject_reason = null
++    where id = new.profile_id;
++  elsif new.status = 'rejected' and old.status is distinct from 'rejected' then
++    update public.profiles
++    set dev_status = 'rejected', dev_reject_reason = new.reject_reason
++    where id = new.profile_id;
++  end if;
++  return null;
++end;
++$$ language plpgsql security definer;
++
++drop trigger if exists on_dev_verification_status_changed on public.dev_verifications;
++create trigger on_dev_verification_status_changed
++  after update on public.dev_verifications
++  for each row execute procedure public.sync_dev_status_from_verification();
++
++-- Public-safe subset of a verification (display name + country only —
++-- never legal name, DOB, phone, or documents) gets copied onto the
++-- already-publicly-readable profiles row on approval, so the public
++-- profile page never needs to touch the locked-down dev_verifications
++-- table at all.
++alter table public.profiles add column if not exists display_name text;
++alter table public.profiles add column if not exists country text;
++
++create or replace function public.sync_dev_status_from_verification()
++returns trigger as $$
++begin
++  if new.status = 'approved' and old.status is distinct from 'approved' then
++    update public.profiles
++    set dev_status = 'verified',
++        dev_reject_reason = null,
++        display_name = new.display_name,
++        country = new.country
++    where id = new.profile_id;
++  elsif new.status = 'rejected' and old.status is distinct from 'rejected' then
++    update public.profiles
++    set dev_status = 'rejected', dev_reject_reason = new.reject_reason
++    where id = new.profile_id;
++  end if;
++  return null;
++end;
++$$ language plpgsql security definer;
++
++-- Realtime, scoped to exactly what section 19 needs (per the "only these
++-- specific pages need push/pull, nothing else" requirement): the admin
++-- inbox watches for new pending requests, and the applicant's own
++-- /apply-dev page watches its own profiles row for a status change.
++alter publication supabase_realtime add table public.dev_verifications;
++alter publication supabase_realtime add table public.profiles;

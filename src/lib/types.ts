@@ -69,6 +69,49 @@ export type Review = {
   profiles?: { full_name: string | null; avatar_url: string | null } | null;
 };
 
+export type DevAreaTag =
+  | "android"
+  | "ios"
+  | "web"
+  | "desktop"
+  | "backend"
+  | "game_dev"
+  | "other";
+
+export type DevVerification = {
+  id: string;
+  profile_id: string;
+  request_number: string;
+  full_legal_name: string;
+  display_name: string;
+  country: string;
+  date_of_birth: string;
+  phone_number: string;
+  phone_verified: boolean;
+  profile_photo_url: string | null;
+  gov_id_type: "nid" | "passport" | "driving_license";
+  gov_id_document_url: string;
+  selfie_url: string;
+  identity_match_confirmed: boolean;
+  bio: string | null;
+  portfolio_url: string | null;
+  github_url: string | null;
+  previous_projects: string | null;
+  dev_areas: DevAreaTag[];
+  agreement_accepted: boolean;
+  ownership_declaration: boolean;
+  ip_responsibility_declaration: boolean;
+  content_policy_accepted: boolean;
+  privacy_policy_accepted: boolean;
+  false_info_agreement: boolean;
+  status: "pending" | "approved" | "rejected";
+  reject_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Profile = {
   id: string;
   full_name: string | null;
@@ -79,6 +122,8 @@ export type Profile = {
   dev_reject_reason: string | null;
   profile_headline: string | null;
   profile_bio: string | null;
+  display_name: string | null;
+  country: string | null;
 };
 
 // The separate `sources` table/admin section is retired — github_url and
