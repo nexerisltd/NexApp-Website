@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import AdminSubNav from "@/components/AdminSubNav";
 
-export default async function AdminLayout({
+export default async function SeniorAdminLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -14,16 +13,8 @@ export default async function AdminLayout({
 
   if (!user) redirect("/login");
 
-  const { data: isAdmin } = await supabase.rpc("is_admin", { uid: user.id });
-
-  if (!isAdmin) redirect("/");
-
   const { data: isSeniorAdmin } = await supabase.rpc("is_senior_admin", { uid: user.id });
+  if (!isSeniorAdmin) redirect("/admin");
 
-  return (
-    <div className="mx-auto max-w-5xl px-6 py-14">
-      <AdminSubNav isSeniorAdmin={!!isSeniorAdmin} />
-      {children}
-    </div>
-  );
+  return <div className="mt-8">{children}</div>;
 }

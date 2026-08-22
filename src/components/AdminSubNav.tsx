@@ -15,12 +15,15 @@ const tabs = [
   { href: "/admin/team", label: "Admins" },
 ];
 
-export default function AdminSubNav() {
+export default function AdminSubNav({ isSeniorAdmin = false }: { isSeniorAdmin?: boolean }) {
   const pathname = usePathname();
+  const allTabs = isSeniorAdmin
+    ? [...tabs, { href: "/admin/senior", label: "⭐ Senior" }]
+    : tabs;
 
   return (
-    <div className="mb-8 flex gap-2">
-      {tabs.map((tab) => {
+    <div className="mb-8 flex flex-wrap gap-2">
+      {allTabs.map((tab) => {
         const active =
           tab.href === "/admin"
             ? pathname === "/admin"

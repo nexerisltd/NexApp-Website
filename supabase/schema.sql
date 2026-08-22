@@ -1307,3 +1307,144 @@ $$ language plpgsql security definer;
 -- /apply-dev page watches its own profiles row for a status change.
 alter publication supabase_realtime add table public.dev_verifications;
 alter publication supabase_realtime add table public.profiles;
+
+-- ============================================================
+-- 20. Senior Admin tier + Search Console verification tools ---------------
+-- A senior admin is an admin with extra, more sensitive controls — this
+-- section adds the tier itself plus the first tool (Google Search Console
+-- domain verification). More senior-only tools get added onto this same
+-- gate later.
+-- ============================================================
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('user', 'admin', 'senior_admin'));
+
+-- Senior admins count as admins everywhere is_admin() is already checked
+-- (they get every regular-admin privilege plus the senior-only section).
+create or replace function public.is_admin(uid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where id = uid and role in ('admin', 'senior_admin')
+  );
+$$;
+
+create or replace function public.is_senior_admin(uid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where id = uid and role = 'senior_admin'
+  );
+$$;
+
+grant execute on function public.is_senior_admin(uuid) to authenticated, anon;
+
+-- Only an existing senior admin can mint another one — a regular admin
+-- cannot self-escalate or escalate anyone else into this tier.
+create or replace function public.promote_to_senior_admin(target_email text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_id uuid;
+begin
+  if not public.is_senior_admin(auth.uid()) then
+    raise exception 'Only senior admins can promote to senior admin';
+  end if;
+
+  select id into target_id from auth.users where email = target_email;
+  if target_id is null then
+    raise exception 'No account found for that email — they need to sign up first';
+  end if;
+
+  update public.profiles set role = 'senior_admin' where id = target_id;
+  return true;
+end;
+$$;
+
+create or replace function public.revoke_senior_admin(target_email text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_id uuid;
+begin
+  if not public.is_senior_admin(auth.uid()) then
+    raise exception 'Only senior admins can revoke senior admin access';
+  end if;
+
+  select id into target_id from auth.users where email = target_email;
+  if target_id is null then
+    raise exception 'No account found for that email';
+  end if;
+
+  if target_id = auth.uid() then
+    raise exception 'You cannot revoke your own senior admin access';
+  end if;
+
+  -- Steps back down to a regular admin, not all the way to 'user'.
+  update public.profiles set role = 'admin' where id = target_id;
+  return true;
+end;
+$$;
+
+grant execute on function public.promote_to_senior_admin(text) to authenticated;
+grant execute on function public.revoke_senior_admin(text) to authenticated;
+
+-- ---- Search Console verification settings (singleton row) ---------------
+-- None of this data is actually sensitive — Google's crawler fetches the
+-- HTML file and meta tag completely unauthenticated over the public
+-- internet, so a public SELECT policy is correct and intentional here.
+-- Only *writing* these values is restricted to senior admins.
+create table if not exists public.site_verification_settings (
+  id boolean primary key default true,
+  check (id),
+  google_site_verification_meta text,
+  google_html_verification_filename text,
+  google_html_verification_content text,
+  dns_txt_host text,
+  dns_txt_value text,
+  dns_cname_host text,
+  dns_cname_value text,
+  updated_by uuid references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.site_verification_settings (id) values (true)
+  on conflict (id) do nothing;
+
+drop trigger if exists site_verification_settings_touch_updated_at on public.site_verification_settings;
+create trigger site_verification_settings_touch_updated_at
+  before update on public.site_verification_settings
+  for each row execute procedure public.touch_updated_at();
+
+alter table public.site_verification_settings enable row level security;
+
+drop policy if exists "Verification settings are publicly readable" on public.site_verification_settings;
+create policy "Verification settings are publicly readable"
+  on public.site_verification_settings for select
+  using (true);
+
+drop policy if exists "Senior admins manage verification settings" on public.site_verification_settings;
+create policy "Senior admins manage verification settings"
+  on public.site_verification_settings for all
+  using (public.is_senior_admin(auth.uid()))
+  with check (public.is_senior_admin(auth.uid()));
+
+-- ---- Bootstrap note -------------------------------------------------------
+-- There's no UI to create the very first senior admin (chicken-and-egg —
+-- promote_to_senior_admin() itself requires an existing one). Run this
+-- once by hand for whichever admin should become the first senior admin:
+--   update public.profiles set role = 'senior_admin'
+--   where id = (select id from auth.users where email = 'you@example.com');

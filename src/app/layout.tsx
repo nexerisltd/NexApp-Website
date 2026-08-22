@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import Toaster from "@/components/Toaster";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { FavoritesProvider } from "@/lib/favorites-context";
+import { createPublicClient } from "@/lib/supabase/public";
 
 const sora = Sora({
   variable: "--font-display-face",
@@ -26,24 +27,39 @@ const jetbrainsMono = JetBrains_Mono({
   weight: ["400", "500"],
 });
 
-export const metadata: Metadata = {
-  title: "NexApp — Your app store, everywhere",
-  description:
-    "NexApp is a web-based app store from NexAuras, with mobile and desktop apps on the way. Discover, publish and download apps in one place.",
-  manifest: "/manifest.webmanifest",
-  icons: {
-    icon: [
-      { url: "/icon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
-    apple: [{ url: "/icon-180.png", sizes: "180x180", type: "image/png" }],
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "NexApp",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const supabase = createPublicClient();
+  const { data } = await supabase
+    .from("site_verification_settings")
+    .select("google_site_verification_meta")
+    .eq("id", true)
+    .maybeSingle();
+
+  return {
+    title: "NexApp — Your app store, everywhere",
+    description:
+      "NexApp is a web-based app store from NexAuras, with mobile and desktop apps on the way. Discover, publish and download apps in one place.",
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/icon-32.png", sizes: "32x32", type: "image/png" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/icon-180.png", sizes: "180x180", type: "image/png" }],
+    },
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "NexApp",
+    },
+    // The "HTML tag" Search Console method — Next.js renders this straight
+    // into <head> as <meta name="google-site-verification" content="...">
+    // whenever a senior admin has one configured.
+    verification: data?.google_site_verification_meta
+      ? { google: data.google_site_verification_meta }
+      : undefined,
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#0a0e17",
