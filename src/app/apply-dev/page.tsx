@@ -161,6 +161,10 @@ export default async function ApplyDevPage({
                 className="aurora-border w-full rounded-xl glass-card px-4 py-2.5 text-sm outline-none"
               />
               <p className="text-[11px] text-text-muted">
+                No OTP text right now — our review team checks this by hand alongside
+                your ID during manual review.
+              </p>
+              <p className="text-[11px] text-text-muted">
                 Signed in as {user.email} — used as your verified email automatically.
               </p>
             </section>

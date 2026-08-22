@@ -12,15 +12,16 @@ export async function approveDevVerification(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // identity_match_confirmed is a deliberate manual step — the admin has
-  // to explicitly tick "I compared the ID and selfie myself" before this
-  // action is even reachable (see the form in page.tsx), not just click
-  // one button through.
+  // Approval means the admin has manually reviewed everything by hand:
+  // ID vs selfie, and the phone number looks legitimate. There's no
+  // automated SMS OTP step (that would need a paid third-party provider),
+  // so this checkbox-gated approval is the actual verification.
   const { error } = await supabase
     .from("dev_verifications")
     .update({
       status: "approved",
       identity_match_confirmed: true,
+      phone_verified: true,
       reviewed_by: user?.id ?? null,
       reviewed_at: new Date().toISOString(),
     })

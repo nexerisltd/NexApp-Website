@@ -1,4 +1,4 @@
-import { Search, UserCheck, UserX, IdCard, Globe, GitBranch, Link as LinkIcon } from "lucide-react";
+import { Search, UserCheck, UserX, IdCard, Globe, GitBranch, Link as LinkIcon, Phone } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getSignedDevDocUrl } from "@/lib/devDocSignedUrl";
 import { approveDevVerification, rejectDevVerification } from "@/app/admin/developers/actions";
@@ -89,9 +89,13 @@ export default async function AdminDevelopersPage({
                     <p className="mt-0.5 font-mono text-xs text-accent">{v.request_number}</p>
                   </div>
                   <span className="text-xs text-text-muted">
-                    {v.country} · DOB {v.date_of_birth} · {v.phone_number}
+                    {v.country} · DOB {v.date_of_birth}
                   </span>
                 </div>
+                <p className="mt-2 flex items-center gap-1.5 text-sm">
+                  <Phone size={13} className="text-text-muted" />
+                  <span className="font-mono">{v.phone_number}</span>
+                </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div>
@@ -152,7 +156,7 @@ export default async function AdminDevelopersPage({
                     <input type="hidden" name="id" value={v.id} />
                     <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
                       <input type="checkbox" required className="h-3.5 w-3.5 accent-success" />
-                      I compared the ID and selfie myself
+                      I&apos;ve manually checked the ID, selfie, and phone number
                     </label>
                     <button
                       type="submit"
