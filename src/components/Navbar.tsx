@@ -64,20 +64,12 @@ export default function Navbar() {
   return (
     <header className="glass sticky top-0 z-50 border-b border-border">
       <nav className="flex items-center justify-between gap-4 px-6 py-4">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight">
+        <Link href="/" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight lg:hidden">
           <Image src="/icon-512.png" alt="NexApp" width={28} height={28} className="h-7 w-7" />
           Nex<span className="aurora-text">App</span>
         </Link>
 
-        <div className="hidden items-center gap-1 text-sm sm:flex">
-          <NavLink href="/">Home</NavLink>
-          <NavLink href="/shop">Apps</NavLink>
-          <NavLink href="/shop">Categories</NavLink>
-          {!isAdmin && <NavLink href="/submit">Developers</NavLink>}
-          {isAdmin && <NavLink href="/admin">Admin</NavLink>}
-        </div>
-
-        <div className="hidden flex-1 justify-center px-6 lg:flex">
+        <div className="hidden flex-1 lg:flex">
           <GlobalSearch variant="pill" />
         </div>
 

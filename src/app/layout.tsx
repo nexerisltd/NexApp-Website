@@ -89,10 +89,10 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <FavoritesProvider>
-          <Navbar />
           <div className="flex">
             <Sidebar />
-            <div className="flex min-h-[calc(100vh-65px)] flex-1 flex-col">
+            <div className="flex min-h-screen flex-1 flex-col">
+              <Navbar />
               <main className="flex-1">{children}</main>
               <Footer />
             </div>

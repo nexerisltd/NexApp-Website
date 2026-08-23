@@ -1,100 +1,118 @@
 import Link from "next/link";
 import {
-  Compass,
-  TrendingUp,
+  Home,
+  LayoutGrid,
+  BarChart3,
   Sparkles,
+  Flame,
   Award,
-  Layers,
-  CheckSquare,
-  Clapperboard,
-  Wrench,
-  Gamepad2,
-  GraduationCap,
-  Briefcase,
-  Coffee,
-  Code2,
-  Boxes,
+  Download,
+  Bell,
+  Heart,
+  ArrowRight,
 } from "lucide-react";
-import { createPublicClient } from "@/lib/supabase/public";
-import SidebarInstallCard from "@/components/SidebarInstallCard";
+import { createClient } from "@/lib/supabase/server";
+import SidebarNavList, { type SidebarNavItem } from "@/components/SidebarNavList";
 
-const NAV_LINKS = [
-  { href: "/", label: "Discover", icon: Compass },
-  { href: "/shop?sort=top", label: "Top Charts", icon: TrendingUp },
+const PRIMARY_NAV: SidebarNavItem[] = [
+  { href: "/", label: "Home", icon: Home },
+  { href: "/shop", label: "Categories", icon: LayoutGrid },
+  { href: "/shop?sort=top", label: "Top Charts", icon: BarChart3 },
   { href: "/shop?sort=new", label: "New Releases", icon: Sparkles },
-  { href: "/shop?sort=top", label: "Editor's Choice", icon: Award },
-  { href: "/favorites", label: "Collections", icon: Layers },
+  { href: "/shop?sort=trending", label: "Trending", icon: Flame },
+  { href: "/shop?sort=editors", label: "Editor's Choice", icon: Award },
 ];
 
-// A per-category icon + color, matched by name where we recognize it and
-// cycling through a fallback set otherwise — categories don't store their
-// own icon/color in the DB.
-const CATEGORY_STYLE: Record<string, { icon: typeof CheckSquare; color: string }> = {
-  productivity: { icon: CheckSquare, color: "#3159e8" },
-  entertainment: { icon: Clapperboard, color: "#e6437a" },
-  utilities: { icon: Wrench, color: "#12b8a6" },
-  games: { icon: Gamepad2, color: "#e08a2b" },
-  education: { icon: GraduationCap, color: "#2b8fe0" },
-  business: { icon: Briefcase, color: "#c2410c" },
-  lifestyle: { icon: Coffee, color: "#a855f7" },
-  "developer-tools": { icon: Code2, color: "#7c3aed" },
-};
-const FALLBACK_STYLES = Object.values(CATEGORY_STYLE);
-
 export default async function Sidebar() {
-  const supabase = createPublicClient();
-  const { data: categories } = await supabase
-    .from("categories")
-    .select("id, name, slug")
-    .order("name");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const categoryRows = (categories ?? []) as { id: string; name: string; slug: string }[];
+  let unreadCount = 0;
+  let isVerifiedDev = false;
+  let isAdmin = false;
+  if (user) {
+    const [{ count }, { data: profile }, { data: adminCheck }] = await Promise.all([
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("read", false),
+      supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
+      supabase.rpc("is_admin", { uid: user.id }),
+    ]);
+    unreadCount = count ?? 0;
+    isVerifiedDev = profile?.dev_status === "verified";
+    isAdmin = !!adminCheck;
+  }
+
+  const secondaryNav: SidebarNavItem[] = [
+    { href: "/downloads", label: "My Apps", icon: Download },
+    { href: "/", label: "Updates", icon: Bell, badge: unreadCount },
+    { href: "/favorites", label: "Wishlist", icon: Heart },
+  ];
 
   return (
-    <aside className="sticky top-[65px] hidden h-[calc(100vh-65px)] w-60 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-4 lg:flex">
-      <nav className="flex flex-col gap-1">
-        {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={label}
-            href={href}
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            <Icon size={16} />
-            {label}
-          </Link>
-        ))}
-      </nav>
+    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-5 lg:flex">
+      <Link href="/" className="flex items-center gap-2.5">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#21c3e0] font-display text-lg font-extrabold text-white shadow-lg shadow-accent/20">
+          N
+        </span>
+        <span>
+          <span className="block font-display text-lg font-bold leading-tight">
+            Nex<span className="aurora-text">App</span>
+          </span>
+          <span className="block text-[11px] leading-tight text-text-muted">
+            Discover &middot; Download &middot; Enjoy
+          </span>
+        </span>
+      </Link>
 
-      <p className="mb-2 mt-6 px-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-        Categories
-      </p>
-      <nav className="flex flex-1 flex-col gap-0.5">
-        {categoryRows.map((cat, i) => {
-          const style = CATEGORY_STYLE[cat.slug] ?? FALLBACK_STYLES[i % FALLBACK_STYLES.length];
-          const Icon = style.icon;
-          return (
-            <Link
-              key={cat.id}
-              href={`/shop?category=${cat.slug}`}
-              className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text"
-            >
-              <Icon size={15} style={{ color: style.color }} />
-              {cat.name}
-            </Link>
-          );
-        })}
-        {categoryRows.length === 0 && (
-          <Link
-            href="/shop"
-            className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-text-muted hover:bg-surface-2 hover:text-text"
-          >
-            <Boxes size={15} />
-            Browse all
-          </Link>
-        )}
-      </nav>
+      <div className="mt-6">
+        <SidebarNavList items={PRIMARY_NAV} />
+      </div>
 
-      <SidebarInstallCard />
+      <div className="my-4 border-t border-border" />
+
+      <SidebarNavList items={secondaryNav} />
+
+      <div className="flex-1" />
+
+      {!isAdmin && (
+        <Link
+          href={isVerifiedDev ? "/dashboard" : "/apply-dev"}
+          className="group mt-6 flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-accent to-[#6d5ce8] p-5 text-white shadow-lg shadow-accent/20 transition-transform hover:scale-[1.02]"
+        >
+          <p className="font-display text-base font-bold leading-snug">
+            {isVerifiedDev ? "Developer Dashboard" : "Become a Developer"}
+          </p>
+          <p className="text-xs leading-relaxed text-white/80">
+            {isVerifiedDev
+              ? "Manage your apps and reach millions of users."
+              : "Publish your app and reach millions of users."}
+          </p>
+          <span className="flex w-fit items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-accent transition-transform group-hover:translate-x-0.5">
+            {isVerifiedDev ? "Open dashboard" : "Get Started"}
+            <ArrowRight size={13} />
+          </span>
+        </Link>
+      )}
+
+      <div className="mt-6 flex flex-col gap-2 border-t border-border pt-4 text-[11px] text-text-muted">
+        <p>&copy; {new Date().getFullYear()} NexApp</p>
+        <div className="flex items-center gap-3">
+          <Link href="/privacy" className="hover:text-text">
+            Privacy
+          </Link>
+          <Link href="/terms" className="hover:text-text">
+            Terms
+          </Link>
+          <Link href="/" className="hover:text-text">
+            About
+          </Link>
+        </div>
+      </div>
     </aside>
   );
 }
