@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Download } from "lucide-react";
+import { Download, CheckCircle2 } from "lucide-react";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -11,15 +11,24 @@ type BeforeInstallPromptEvent = Event & {
 
 export default function SidebarInstallCard() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
+    // Already running as the installed PWA — no point offering to install.
+    if (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as { standalone?: boolean }).standalone
+    ) {
+      setInstalled(true);
+    }
+
     function onPrompt(e: Event) {
       e.preventDefault();
       setInstallEvent(e as BeforeInstallPromptEvent);
     }
     function onInstalled() {
       setInstallEvent(null);
+      setInstalled(true);
     }
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
@@ -29,8 +38,6 @@ export default function SidebarInstallCard() {
     };
   }, []);
 
-  if (!installEvent || dismissed) return null;
-
   async function handleInstall() {
     if (!installEvent) return;
     await installEvent.prompt();
@@ -39,29 +46,36 @@ export default function SidebarInstallCard() {
   }
 
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-surface-2 p-4">
-      <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15">
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-accent to-[#6d5ce8] p-5 text-white shadow-lg shadow-accent/20">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
         <Image src="/icon-32.png" alt="" width={18} height={18} />
       </div>
-      <p className="text-sm font-semibold">Install NexApp</p>
-      <p className="mt-1 text-xs text-text-muted">
-        Get the app-like experience — installs in one tap, works offline.
+      <p className="font-display text-base font-bold leading-snug">
+        {installed ? "NexApp is installed" : "Install NexApp"}
       </p>
-      <div className="mt-3 flex gap-2">
+      <p className="text-xs leading-relaxed text-white/80">
+        {installed
+          ? "You're all set — open it anytime from your home screen or desktop."
+          : "Get the app-like experience — installs in one tap, works offline."}
+      </p>
+      {installed ? (
+        <span className="flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold">
+          <CheckCircle2 size={13} /> Installed
+        </span>
+      ) : installEvent ? (
         <button
           onClick={handleInstall}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-accent px-3 py-2 text-xs font-bold text-white transition-transform hover:scale-[1.03]"
+          className="flex w-fit items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-accent transition-transform hover:scale-[1.03]"
         >
           <Download size={13} />
           Install
         </button>
-        <button
-          onClick={() => setDismissed(true)}
-          className="rounded-full px-3 py-2 text-xs text-text-muted hover:text-text"
-        >
-          Later
-        </button>
-      </div>
+      ) : (
+        <p className="text-[11px] text-white/70">
+          Open this site in Chrome/Edge on desktop or Android, or use &quot;Add to
+          Home Screen&quot; on iOS Safari.
+        </p>
+      )}
     </div>
   );
 }
