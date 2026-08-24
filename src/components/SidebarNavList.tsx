@@ -14,6 +14,9 @@ export type SidebarNavItem = {
   // plain descriptor object, so it serializes fine.
   icon: React.ReactNode;
   badge?: number;
+  // A small red dot (e.g. for "Updates") instead of a numeric count —
+  // just signals "something new" without claiming an exact number.
+  dot?: boolean;
 };
 
 function isActivePath(pathname: string, search: string, href: string) {
@@ -53,6 +56,12 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
             )}
             {item.icon}
             <span className="flex-1">{item.label}</span>
+            {item.dot && (
+              <span
+                aria-label="New updates"
+                className="h-2 w-2 shrink-0 rounded-full bg-danger"
+              />
+            )}
             {!!item.badge && (
               <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
                 {item.badge}

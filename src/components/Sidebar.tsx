@@ -1,28 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Suspense } from "react";
-import {
-  Home,
-  LayoutGrid,
-  BarChart3,
-  Sparkles,
-  Flame,
-  Award,
-  Download,
-  Bell,
-  Heart,
-  ArrowRight,
-} from "lucide-react";
+import { Home, LayoutGrid, Download, Bell, Heart } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import SidebarNavList, { type SidebarNavItem } from "@/components/SidebarNavList";
-
-const PRIMARY_NAV: SidebarNavItem[] = [
-  { href: "/", label: "Home", icon: <Home size={17} /> },
-  { href: "/shop", label: "Categories", icon: <LayoutGrid size={17} /> },
-  { href: "/shop?sort=top", label: "Top Charts", icon: <BarChart3 size={17} /> },
-  { href: "/shop?sort=new", label: "New Releases", icon: <Sparkles size={17} /> },
-  { href: "/shop?sort=trending", label: "Trending", icon: <Flame size={17} /> },
-  { href: "/shop?sort=editors", label: "Editor's Choice", icon: <Award size={17} /> },
-];
+import SidebarInstallCard from "@/components/SidebarInstallCard";
 
 // Suspense fallback for SidebarNavList (which reads useSearchParams and so
 // must be wrapped in Suspense) — same links, no active-highlight logic, so
@@ -38,6 +20,7 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
         >
           {item.icon}
           <span className="flex-1">{item.label}</span>
+          {item.dot && <span className="h-2 w-2 shrink-0 rounded-full bg-danger" />}
           {!!item.badge && (
             <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
               {item.badge}
@@ -50,14 +33,10 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
 }
 
 export default async function Sidebar() {
-  // Everything here is best-effort personalization (unread count, dev/admin
-  // status) — if any of it fails for any reason, the sidebar should still
-  // render with sensible defaults rather than taking the entire site down.
-  // This wraps ALL data-fetching so a broken query, a stale schema, or a
-  // network hiccup can never surface as a server-side exception again.
-  let unreadCount = 0;
-  let isVerifiedDev = false;
-  let isAdmin = false;
+  // Everything here is best-effort personalization — if any of it fails
+  // for any reason, the sidebar should still render with sensible
+  // defaults rather than taking the entire site down.
+  let hasNewUpdate = false;
 
   try {
     const supabase = await createClient();
@@ -67,42 +46,45 @@ export default async function Sidebar() {
 
     if (user) {
       const results = await Promise.allSettled([
-        supabase
-          .from("notifications")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("read", false),
-        supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
-        supabase.rpc("is_admin", { uid: user.id }),
+        supabase.rpc("get_my_app_updates"),
+        supabase.from("profiles").select("updates_last_seen_at").eq("id", user.id).single(),
       ]);
+      const [updatesResult, profileResult] = results;
 
-      const [notifResult, profileResult, adminResult] = results;
-      if (notifResult.status === "fulfilled") {
-        unreadCount = notifResult.value.count ?? 0;
-      }
-      if (profileResult.status === "fulfilled") {
-        isVerifiedDev = profileResult.value.data?.dev_status === "verified";
-      }
-      if (adminResult.status === "fulfilled") {
-        isAdmin = !!adminResult.value.data;
+      if (updatesResult.status === "fulfilled" && updatesResult.value.data) {
+        const updates = updatesResult.value.data as { version_updated_at: string }[];
+        const lastSeen =
+          profileResult.status === "fulfilled"
+            ? profileResult.value.data?.updates_last_seen_at
+            : null;
+        const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0;
+        hasNewUpdate = updates.some(
+          (u) => new Date(u.version_updated_at).getTime() > lastSeenTime
+        );
       }
     }
   } catch (err) {
     console.error("[Sidebar] personalization fetch failed, rendering defaults:", err);
   }
 
-  const secondaryNav: SidebarNavItem[] = [
+  const navItems: SidebarNavItem[] = [
+    { href: "/", label: "Home", icon: <Home size={17} /> },
+    { href: "/shop", label: "Apps", icon: <LayoutGrid size={17} /> },
     { href: "/downloads", label: "My Apps", icon: <Download size={17} /> },
-    { href: "/", label: "Updates", icon: <Bell size={17} />, badge: unreadCount },
+    { href: "/updates", label: "Updates", icon: <Bell size={17} />, dot: hasNewUpdate },
     { href: "/favorites", label: "Wishlist", icon: <Heart size={17} /> },
   ];
 
   return (
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-5 lg:flex">
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#21c3e0] font-display text-lg font-extrabold text-white shadow-lg shadow-accent/20">
-          N
-        </span>
+        <Image
+          src="/icon-512.png"
+          alt="NexApp"
+          width={40}
+          height={40}
+          className="h-10 w-10 shrink-0 rounded-xl shadow-lg shadow-accent/20"
+        />
         <span>
           <span className="block font-display text-lg font-bold leading-tight">
             Nex<span className="aurora-text">App</span>
@@ -114,38 +96,14 @@ export default async function Sidebar() {
       </Link>
 
       <div className="mt-6">
-        <Suspense fallback={<StaticNavFallback items={PRIMARY_NAV} />}>
-          <SidebarNavList items={PRIMARY_NAV} />
+        <Suspense fallback={<StaticNavFallback items={navItems} />}>
+          <SidebarNavList items={navItems} />
         </Suspense>
       </div>
 
-      <div className="my-4 border-t border-border" />
-
-      <Suspense fallback={<StaticNavFallback items={secondaryNav} />}>
-        <SidebarNavList items={secondaryNav} />
-      </Suspense>
-
       <div className="flex-1" />
 
-      {!isAdmin && (
-        <Link
-          href={isVerifiedDev ? "/dashboard" : "/apply-dev"}
-          className="group mt-6 flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-accent to-[#6d5ce8] p-5 text-white shadow-lg shadow-accent/20 transition-transform hover:scale-[1.02]"
-        >
-          <p className="font-display text-base font-bold leading-snug">
-            {isVerifiedDev ? "Developer Dashboard" : "Become a Developer"}
-          </p>
-          <p className="text-xs leading-relaxed text-white/80">
-            {isVerifiedDev
-              ? "Manage your apps and reach millions of users."
-              : "Publish your app and reach millions of users."}
-          </p>
-          <span className="flex w-fit items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-accent transition-transform group-hover:translate-x-0.5">
-            {isVerifiedDev ? "Open dashboard" : "Get Started"}
-            <ArrowRight size={13} />
-          </span>
-        </Link>
-      )}
+      <SidebarInstallCard />
 
       <div className="mt-6 flex flex-col gap-2 border-t border-border pt-4 text-[11px] text-text-muted">
         <p>&copy; {new Date().getFullYear()} NexApp</p>
@@ -156,8 +114,8 @@ export default async function Sidebar() {
           <Link href="/terms" className="hover:text-text">
             Terms
           </Link>
-          <Link href="/" className="hover:text-text">
-            About
+          <Link href="/apply-dev" className="hover:text-text">
+            Become a Developer
           </Link>
         </div>
       </div>

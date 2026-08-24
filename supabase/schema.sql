@@ -1469,3 +1469,66 @@ create policy "Senior admins manage verification settings"
 -- once by hand for whichever admin should become the first senior admin:
 --   update public.profiles set role = 'senior_admin'
 --   where id = (select id from auth.users where email = 'you@example.com');
+
+-- ============================================================
+-- 21. App update tracking for the sidebar's "Updates" page ----------------
+-- Tracks when an app's version actually changed (not just any edit), so
+-- "Updates" can show a real, meaningful list: which of your favorited or
+-- downloaded apps got a new version since you added them, and when.
+-- ============================================================
+
+alter table public.apps add column if not exists version_updated_at timestamptz not null default now();
+alter table public.profiles add column if not exists updates_last_seen_at timestamptz;
+
+create or replace function public.touch_version_updated_at()
+returns trigger as $$
+begin
+  if new.version is distinct from old.version then
+    new.version_updated_at := now();
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists apps_touch_version_updated_at on public.apps;
+create trigger apps_touch_version_updated_at
+  before update on public.apps
+  for each row execute procedure public.touch_version_updated_at();
+
+-- Always scoped to the caller's own auth.uid() (never takes a user id
+-- parameter), so there's no way to query anyone else's update feed.
+create or replace function public.get_my_app_updates()
+returns table (
+  app_id uuid,
+  name text,
+  slug text,
+  icon_url text,
+  version text,
+  version_updated_at timestamptz,
+  since timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    a.id, a.name, a.slug, a.icon_url, a.version, a.version_updated_at,
+    least(coalesce(f.first_seen, 'infinity'::timestamptz), coalesce(d.first_seen, 'infinity'::timestamptz)) as since
+  from public.apps a
+  left join (
+    select app_id, min(created_at) as first_seen
+    from public.favorites where user_id = auth.uid() group by app_id
+  ) f on f.app_id = a.id
+  left join (
+    select app_id, min(created_at) as first_seen
+    from public.downloads where user_id = auth.uid() group by app_id
+  ) d on d.app_id = a.id
+  where (f.app_id is not null or d.app_id is not null)
+    and a.version_updated_at > least(
+      coalesce(f.first_seen, 'infinity'::timestamptz),
+      coalesce(d.first_seen, 'infinity'::timestamptz)
+    )
+  order by a.version_updated_at desc;
+$$;
+
+grant execute on function public.get_my_app_updates() to authenticated;

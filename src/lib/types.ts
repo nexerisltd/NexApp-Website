@@ -124,6 +124,17 @@ export type Profile = {
   profile_bio: string | null;
   display_name: string | null;
   country: string | null;
+  updates_last_seen_at: string | null;
+};
+
+export type AppUpdate = {
+  app_id: string;
+  name: string;
+  slug: string;
+  icon_url: string | null;
+  version: string | null;
+  version_updated_at: string;
+  since: string;
 };
 
 // The separate `sources` table/admin section is retired — github_url and

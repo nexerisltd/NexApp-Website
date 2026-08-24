@@ -1,0 +1,423 @@
+diff --git a/src/app/updates/actions.ts b/src/app/updates/actions.ts
+new file mode 100644
+index 0000000..b9ffa84
+--- /dev/null
++++ b/src/app/updates/actions.ts
+@@ -0,0 +1,16 @@
++"use server";
++
++import { createClient } from "@/lib/supabase/server";
++
++export async function markUpdatesSeen() {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++  if (!user) return;
++
++  await supabase
++    .from("profiles")
++    .update({ updates_last_seen_at: new Date().toISOString() })
++    .eq("id", user.id);
++}
+diff --git a/src/app/updates/page.tsx b/src/app/updates/page.tsx
+new file mode 100644
+index 0000000..fb27d78
+--- /dev/null
++++ b/src/app/updates/page.tsx
+@@ -0,0 +1,75 @@
++import { redirect } from "next/navigation";
++import Link from "next/link";
++import { PackageCheck, LayoutGrid } from "lucide-react";
++import { createClient } from "@/lib/supabase/server";
++import MarkUpdatesSeen from "@/components/MarkUpdatesSeen";
++import type { AppUpdate } from "@/lib/types";
++
++function relativeTime(dateStr: string) {
++  const diffMs = Date.now() - new Date(dateStr).getTime();
++  const hours = Math.floor(diffMs / 3600000);
++  if (hours < 1) return "just now";
++  if (hours < 24) return `${hours}h ago`;
++  const days = Math.floor(hours / 24);
++  if (days < 30) return `${days}d ago`;
++  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
++}
++
++export default async function UpdatesPage() {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++  if (!user) redirect("/login");
++
++  const { data: updates } = await supabase.rpc("get_my_app_updates");
++  const list = (updates as AppUpdate[] | null) ?? [];
++
++  return (
++    <div className="mx-auto max-w-2xl px-6 py-14">
++      <MarkUpdatesSeen />
++      <h1 className="font-display text-2xl font-bold">Updates</h1>
++      <p className="mt-1 text-sm text-text-muted">
++        New versions of apps you&apos;ve favorited or downloaded.
++      </p>
++
++      <div className="mt-8 flex flex-col divide-y divide-border border-y border-border">
++        {list.length > 0 ? (
++          list.map((u) => (
++            <Link
++              key={u.app_id}
++              href={`/shop/${u.slug}`}
++              className="flex items-center gap-3 py-4 hover:opacity-80"
++            >
++              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-2">
++                {u.icon_url ? (
++                  // eslint-disable-next-line @next/next/no-img-element
++                  <img src={u.icon_url} alt="" className="h-full w-full object-cover" />
++                ) : (
++                  <LayoutGrid size={18} className="text-text-muted" />
++                )}
++              </div>
++              <div className="min-w-0 flex-1">
++                <p className="font-medium">{u.name}</p>
++                <p className="text-xs text-text-muted">
++                  Updated to v{u.version} &middot; {relativeTime(u.version_updated_at)}
++                </p>
++              </div>
++              <PackageCheck size={16} className="shrink-0 text-accent" />
++            </Link>
++          ))
++        ) : (
++          <div className="glass-card my-6 rounded-2xl border border-dashed border-border p-8 text-center text-text-muted">
++            <p className="font-display text-lg font-semibold text-text">
++              No new updates.
++            </p>
++            <p className="mt-2 text-sm">
++              Favorite or download some apps and you&apos;ll see their new versions
++              here.
++            </p>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/MarkUpdatesSeen.tsx b/src/components/MarkUpdatesSeen.tsx
+new file mode 100644
+index 0000000..fc38ea6
+--- /dev/null
++++ b/src/components/MarkUpdatesSeen.tsx
+@@ -0,0 +1,11 @@
++"use client";
++
++import { useEffect } from "react";
++import { markUpdatesSeen } from "@/app/updates/actions";
++
++export default function MarkUpdatesSeen() {
++  useEffect(() => {
++    markUpdatesSeen();
++  }, []);
++  return null;
++}
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index 28e1100..757dd4e 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -1,28 +1,10 @@
+ import Link from "next/link";
++import Image from "next/image";
+ import { Suspense } from "react";
+-import {
+-  Home,
+-  LayoutGrid,
+-  BarChart3,
+-  Sparkles,
+-  Flame,
+-  Award,
+-  Download,
+-  Bell,
+-  Heart,
+-  ArrowRight,
+-} from "lucide-react";
++import { Home, LayoutGrid, Download, Bell, Heart } from "lucide-react";
+ import { createClient } from "@/lib/supabase/server";
+ import SidebarNavList, { type SidebarNavItem } from "@/components/SidebarNavList";
+-
+-const PRIMARY_NAV: SidebarNavItem[] = [
+-  { href: "/", label: "Home", icon: <Home size={17} /> },
+-  { href: "/shop", label: "Categories", icon: <LayoutGrid size={17} /> },
+-  { href: "/shop?sort=top", label: "Top Charts", icon: <BarChart3 size={17} /> },
+-  { href: "/shop?sort=new", label: "New Releases", icon: <Sparkles size={17} /> },
+-  { href: "/shop?sort=trending", label: "Trending", icon: <Flame size={17} /> },
+-  { href: "/shop?sort=editors", label: "Editor's Choice", icon: <Award size={17} /> },
+-];
++import SidebarInstallCard from "@/components/SidebarInstallCard";
+ 
+ // Suspense fallback for SidebarNavList (which reads useSearchParams and so
+ // must be wrapped in Suspense) — same links, no active-highlight logic, so
+@@ -38,6 +20,7 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
+         >
+           {item.icon}
+           <span className="flex-1">{item.label}</span>
++          {item.dot && <span className="h-2 w-2 shrink-0 rounded-full bg-danger" />}
+           {!!item.badge && (
+             <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+               {item.badge}
+@@ -50,14 +33,10 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
+ }
+ 
+ export default async function Sidebar() {
+-  // Everything here is best-effort personalization (unread count, dev/admin
+-  // status) — if any of it fails for any reason, the sidebar should still
+-  // render with sensible defaults rather than taking the entire site down.
+-  // This wraps ALL data-fetching so a broken query, a stale schema, or a
+-  // network hiccup can never surface as a server-side exception again.
+-  let unreadCount = 0;
+-  let isVerifiedDev = false;
+-  let isAdmin = false;
++  // Everything here is best-effort personalization — if any of it fails
++  // for any reason, the sidebar should still render with sensible
++  // defaults rather than taking the entire site down.
++  let hasNewUpdate = false;
+ 
+   try {
+     const supabase = await createClient();
+@@ -67,42 +46,45 @@ export default async function Sidebar() {
+ 
+     if (user) {
+       const results = await Promise.allSettled([
+-        supabase
+-          .from("notifications")
+-          .select("id", { count: "exact", head: true })
+-          .eq("user_id", user.id)
+-          .eq("read", false),
+-        supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
+-        supabase.rpc("is_admin", { uid: user.id }),
++        supabase.rpc("get_my_app_updates"),
++        supabase.from("profiles").select("updates_last_seen_at").eq("id", user.id).single(),
+       ]);
++      const [updatesResult, profileResult] = results;
+ 
+-      const [notifResult, profileResult, adminResult] = results;
+-      if (notifResult.status === "fulfilled") {
+-        unreadCount = notifResult.value.count ?? 0;
+-      }
+-      if (profileResult.status === "fulfilled") {
+-        isVerifiedDev = profileResult.value.data?.dev_status === "verified";
+-      }
+-      if (adminResult.status === "fulfilled") {
+-        isAdmin = !!adminResult.value.data;
++      if (updatesResult.status === "fulfilled" && updatesResult.value.data) {
++        const updates = updatesResult.value.data as { version_updated_at: string }[];
++        const lastSeen =
++          profileResult.status === "fulfilled"
++            ? profileResult.value.data?.updates_last_seen_at
++            : null;
++        const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0;
++        hasNewUpdate = updates.some(
++          (u) => new Date(u.version_updated_at).getTime() > lastSeenTime
++        );
+       }
+     }
+   } catch (err) {
+     console.error("[Sidebar] personalization fetch failed, rendering defaults:", err);
+   }
+ 
+-  const secondaryNav: SidebarNavItem[] = [
++  const navItems: SidebarNavItem[] = [
++    { href: "/", label: "Home", icon: <Home size={17} /> },
++    { href: "/shop", label: "Apps", icon: <LayoutGrid size={17} /> },
+     { href: "/downloads", label: "My Apps", icon: <Download size={17} /> },
+-    { href: "/", label: "Updates", icon: <Bell size={17} />, badge: unreadCount },
++    { href: "/updates", label: "Updates", icon: <Bell size={17} />, dot: hasNewUpdate },
+     { href: "/favorites", label: "Wishlist", icon: <Heart size={17} /> },
+   ];
+ 
+   return (
+     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-5 lg:flex">
+       <Link href="/" className="flex items-center gap-2.5">
+-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#21c3e0] font-display text-lg font-extrabold text-white shadow-lg shadow-accent/20">
+-          N
+-        </span>
++        <Image
++          src="/icon-512.png"
++          alt="NexApp"
++          width={40}
++          height={40}
++          className="h-10 w-10 shrink-0 rounded-xl shadow-lg shadow-accent/20"
++        />
+         <span>
+           <span className="block font-display text-lg font-bold leading-tight">
+             Nex<span className="aurora-text">App</span>
+@@ -114,38 +96,14 @@ export default async function Sidebar() {
+       </Link>
+ 
+       <div className="mt-6">
+-        <Suspense fallback={<StaticNavFallback items={PRIMARY_NAV} />}>
+-          <SidebarNavList items={PRIMARY_NAV} />
++        <Suspense fallback={<StaticNavFallback items={navItems} />}>
++          <SidebarNavList items={navItems} />
+         </Suspense>
+       </div>
+ 
+-      <div className="my-4 border-t border-border" />
+-
+-      <Suspense fallback={<StaticNavFallback items={secondaryNav} />}>
+-        <SidebarNavList items={secondaryNav} />
+-      </Suspense>
+-
+       <div className="flex-1" />
+ 
+-      {!isAdmin && (
+-        <Link
+-          href={isVerifiedDev ? "/dashboard" : "/apply-dev"}
+-          className="group mt-6 flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-accent to-[#6d5ce8] p-5 text-white shadow-lg shadow-accent/20 transition-transform hover:scale-[1.02]"
+-        >
+-          <p className="font-display text-base font-bold leading-snug">
+-            {isVerifiedDev ? "Developer Dashboard" : "Become a Developer"}
+-          </p>
+-          <p className="text-xs leading-relaxed text-white/80">
+-            {isVerifiedDev
+-              ? "Manage your apps and reach millions of users."
+-              : "Publish your app and reach millions of users."}
+-          </p>
+-          <span className="flex w-fit items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-accent transition-transform group-hover:translate-x-0.5">
+-            {isVerifiedDev ? "Open dashboard" : "Get Started"}
+-            <ArrowRight size={13} />
+-          </span>
+-        </Link>
+-      )}
++      <SidebarInstallCard />
+ 
+       <div className="mt-6 flex flex-col gap-2 border-t border-border pt-4 text-[11px] text-text-muted">
+         <p>&copy; {new Date().getFullYear()} NexApp</p>
+@@ -156,8 +114,8 @@ export default async function Sidebar() {
+           <Link href="/terms" className="hover:text-text">
+             Terms
+           </Link>
+-          <Link href="/" className="hover:text-text">
+-            About
++          <Link href="/apply-dev" className="hover:text-text">
++            Become a Developer
+           </Link>
+         </div>
+       </div>
+diff --git a/src/components/SidebarNavList.tsx b/src/components/SidebarNavList.tsx
+index 51d52d3..aa3dc9d 100644
+--- a/src/components/SidebarNavList.tsx
++++ b/src/components/SidebarNavList.tsx
+@@ -14,6 +14,9 @@ export type SidebarNavItem = {
+   // plain descriptor object, so it serializes fine.
+   icon: React.ReactNode;
+   badge?: number;
++  // A small red dot (e.g. for "Updates") instead of a numeric count —
++  // just signals "something new" without claiming an exact number.
++  dot?: boolean;
+ };
+ 
+ function isActivePath(pathname: string, search: string, href: string) {
+@@ -53,6 +56,12 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
+             )}
+             {item.icon}
+             <span className="flex-1">{item.label}</span>
++            {item.dot && (
++              <span
++                aria-label="New updates"
++                className="h-2 w-2 shrink-0 rounded-full bg-danger"
++              />
++            )}
+             {!!item.badge && (
+               <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+                 {item.badge}
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+index 67c3125..2c27444 100644
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -124,6 +124,17 @@ export type Profile = {
+   profile_bio: string | null;
+   display_name: string | null;
+   country: string | null;
++  updates_last_seen_at: string | null;
++};
++
++export type AppUpdate = {
++  app_id: string;
++  name: string;
++  slug: string;
++  icon_url: string | null;
++  version: string | null;
++  version_updated_at: string;
++  since: string;
+ };
+ 
+ // The separate `sources` table/admin section is retired — github_url and
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index 5ebefce..14af5f3 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -1469,3 +1469,66 @@ create policy "Senior admins manage verification settings"
+ -- once by hand for whichever admin should become the first senior admin:
+ --   update public.profiles set role = 'senior_admin'
+ --   where id = (select id from auth.users where email = 'you@example.com');
++
++-- ============================================================
++-- 21. App update tracking for the sidebar's "Updates" page ----------------
++-- Tracks when an app's version actually changed (not just any edit), so
++-- "Updates" can show a real, meaningful list: which of your favorited or
++-- downloaded apps got a new version since you added them, and when.
++-- ============================================================
++
++alter table public.apps add column if not exists version_updated_at timestamptz not null default now();
++alter table public.profiles add column if not exists updates_last_seen_at timestamptz;
++
++create or replace function public.touch_version_updated_at()
++returns trigger as $$
++begin
++  if new.version is distinct from old.version then
++    new.version_updated_at := now();
++  end if;
++  return new;
++end;
++$$ language plpgsql;
++
++drop trigger if exists apps_touch_version_updated_at on public.apps;
++create trigger apps_touch_version_updated_at
++  before update on public.apps
++  for each row execute procedure public.touch_version_updated_at();
++
++-- Always scoped to the caller's own auth.uid() (never takes a user id
++-- parameter), so there's no way to query anyone else's update feed.
++create or replace function public.get_my_app_updates()
++returns table (
++  app_id uuid,
++  name text,
++  slug text,
++  icon_url text,
++  version text,
++  version_updated_at timestamptz,
++  since timestamptz
++)
++language sql
++security definer
++set search_path = public
++as $$
++  select
++    a.id, a.name, a.slug, a.icon_url, a.version, a.version_updated_at,
++    least(coalesce(f.first_seen, 'infinity'::timestamptz), coalesce(d.first_seen, 'infinity'::timestamptz)) as since
++  from public.apps a
++  left join (
++    select app_id, min(created_at) as first_seen
++    from public.favorites where user_id = auth.uid() group by app_id
++  ) f on f.app_id = a.id
++  left join (
++    select app_id, min(created_at) as first_seen
++    from public.downloads where user_id = auth.uid() group by app_id
++  ) d on d.app_id = a.id
++  where (f.app_id is not null or d.app_id is not null)
++    and a.version_updated_at > least(
++      coalesce(f.first_seen, 'infinity'::timestamptz),
++      coalesce(d.first_seen, 'infinity'::timestamptz)
++    )
++  order by a.version_updated_at desc;
++$$;
++
++grant execute on function public.get_my_app_updates() to authenticated;
