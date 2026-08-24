@@ -8,10 +8,11 @@ import TopAppsList from "@/components/TopAppsList";
 import GoodbyeModal from "@/components/GoodbyeModal";
 import type { App, Billboard, Category } from "@/lib/types";
 
-// No cookies()/searchParams are read server-side on this page, so Next.js
-// can serve it from cache and only revalidate it in the background every
-// 60s instead of re-rendering (and re-querying Supabase) on every visit.
-export const revalidate = 60;
+// The sidebar now reads cookies() on every request (for per-user
+// personalization — unread count, dev/admin status), which makes the whole
+// route tree dynamic. A `revalidate` directive here would conflict with
+// that (ISR/static caching vs. per-request dynamic rendering) and is what
+// caused the server-side exception — so this page is dynamic now too.
 
 export default async function Home() {
   const supabase = createPublicClient();

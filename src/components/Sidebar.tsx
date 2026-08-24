@@ -53,27 +53,45 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
 }
 
 export default async function Sidebar() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  // Everything here is best-effort personalization (unread count, dev/admin
+  // status) — if any of it fails for any reason, the sidebar should still
+  // render with sensible defaults rather than taking the entire site down.
+  // This wraps ALL data-fetching so a broken query, a stale schema, or a
+  // network hiccup can never surface as a server-side exception again.
   let unreadCount = 0;
   let isVerifiedDev = false;
   let isAdmin = false;
-  if (user) {
-    const [{ count }, { data: profile }, { data: adminCheck }] = await Promise.all([
-      supabase
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("read", false),
-      supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
-      supabase.rpc("is_admin", { uid: user.id }),
-    ]);
-    unreadCount = count ?? 0;
-    isVerifiedDev = profile?.dev_status === "verified";
-    isAdmin = !!adminCheck;
+
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const results = await Promise.allSettled([
+        supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("read", false),
+        supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
+        supabase.rpc("is_admin", { uid: user.id }),
+      ]);
+
+      const [notifResult, profileResult, adminResult] = results;
+      if (notifResult.status === "fulfilled") {
+        unreadCount = notifResult.value.count ?? 0;
+      }
+      if (profileResult.status === "fulfilled") {
+        isVerifiedDev = profileResult.value.data?.dev_status === "verified";
+      }
+      if (adminResult.status === "fulfilled") {
+        isAdmin = !!adminResult.value.data;
+      }
+    }
+  } catch (err) {
+    console.error("[Sidebar] personalization fetch failed, rendering defaults:", err);
   }
 
   const secondaryNav: SidebarNavItem[] = [

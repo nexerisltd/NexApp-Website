@@ -1,0 +1,107 @@
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index e75342a..155a3c8 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -8,10 +8,11 @@ import TopAppsList from "@/components/TopAppsList";
+ import GoodbyeModal from "@/components/GoodbyeModal";
+ import type { App, Billboard, Category } from "@/lib/types";
+ 
+-// No cookies()/searchParams are read server-side on this page, so Next.js
+-// can serve it from cache and only revalidate it in the background every
+-// 60s instead of re-rendering (and re-querying Supabase) on every visit.
+-export const revalidate = 60;
++// The sidebar now reads cookies() on every request (for per-user
++// personalization — unread count, dev/admin status), which makes the whole
++// route tree dynamic. A `revalidate` directive here would conflict with
++// that (ISR/static caching vs. per-request dynamic rendering) and is what
++// caused the server-side exception — so this page is dynamic now too.
+ 
+ export default async function Home() {
+   const supabase = createPublicClient();
+diff --git a/src/app/shop/page.tsx b/src/app/shop/page.tsx
+index 3283edc..ad3f4e2 100644
+--- a/src/app/shop/page.tsx
++++ b/src/app/shop/page.tsx
+@@ -3,11 +3,9 @@ import { createPublicClient } from "@/lib/supabase/public";
+ import ShopBrowser from "@/components/ShopBrowser";
+ import type { App, Category } from "@/lib/types";
+ 
+-// This page no longer reads cookies() or searchParams server-side —
+-// filtering happens client-side in ShopBrowser now — so it can be served
+-// from cache and revalidated in the background instead of hitting Supabase
+-// on every single visit.
+-export const revalidate = 60;
++// The sidebar now reads cookies() on every request (for per-user
++// personalization), making the whole route tree dynamic — a `revalidate`
++// directive here would conflict with that, so this page is dynamic too.
+ 
+ export default async function AppsPage() {
+   const supabase = createPublicClient();
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index b1431b7..5f21e2a 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -53,27 +53,45 @@ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
+ }
+ 
+ export default async function Sidebar() {
+-  const supabase = await createClient();
+-  const {
+-    data: { user },
+-  } = await supabase.auth.getUser();
+-
++  // Everything here is best-effort personalization (unread count, dev/admin
++  // status) — if any of it fails for any reason, the sidebar should still
++  // render with sensible defaults rather than taking the entire site down.
++  // This wraps ALL data-fetching so a broken query, a stale schema, or a
++  // network hiccup can never surface as a server-side exception again.
+   let unreadCount = 0;
+   let isVerifiedDev = false;
+   let isAdmin = false;
+-  if (user) {
+-    const [{ count }, { data: profile }, { data: adminCheck }] = await Promise.all([
+-      supabase
+-        .from("notifications")
+-        .select("id", { count: "exact", head: true })
+-        .eq("user_id", user.id)
+-        .eq("read", false),
+-      supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
+-      supabase.rpc("is_admin", { uid: user.id }),
+-    ]);
+-    unreadCount = count ?? 0;
+-    isVerifiedDev = profile?.dev_status === "verified";
+-    isAdmin = !!adminCheck;
++
++  try {
++    const supabase = await createClient();
++    const {
++      data: { user },
++    } = await supabase.auth.getUser();
++
++    if (user) {
++      const results = await Promise.allSettled([
++        supabase
++          .from("notifications")
++          .select("id", { count: "exact", head: true })
++          .eq("user_id", user.id)
++          .eq("read", false),
++        supabase.from("profiles").select("dev_status").eq("id", user.id).single(),
++        supabase.rpc("is_admin", { uid: user.id }),
++      ]);
++
++      const [notifResult, profileResult, adminResult] = results;
++      if (notifResult.status === "fulfilled") {
++        unreadCount = notifResult.value.count ?? 0;
++      }
++      if (profileResult.status === "fulfilled") {
++        isVerifiedDev = profileResult.value.data?.dev_status === "verified";
++      }
++      if (adminResult.status === "fulfilled") {
++        isAdmin = !!adminResult.value.data;
++      }
++    }
++  } catch (err) {
++    console.error("[Sidebar] personalization fetch failed, rendering defaults:", err);
+   }
+ 
+   const secondaryNav: SidebarNavItem[] = [

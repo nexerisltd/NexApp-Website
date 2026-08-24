@@ -3,11 +3,9 @@ import { createPublicClient } from "@/lib/supabase/public";
 import ShopBrowser from "@/components/ShopBrowser";
 import type { App, Category } from "@/lib/types";
 
-// This page no longer reads cookies() or searchParams server-side —
-// filtering happens client-side in ShopBrowser now — so it can be served
-// from cache and revalidated in the background instead of hitting Supabase
-// on every single visit.
-export const revalidate = 60;
+// The sidebar now reads cookies() on every request (for per-user
+// personalization), making the whole route tree dynamic — a `revalidate`
+// directive here would conflict with that, so this page is dynamic too.
 
 export default async function AppsPage() {
   const supabase = createPublicClient();
