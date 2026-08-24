@@ -1,0 +1,149 @@
+diff --git a/src/app/not-found.tsx b/src/app/not-found.tsx
+new file mode 100644
+index 0000000..b1280d4
+--- /dev/null
++++ b/src/app/not-found.tsx
+@@ -0,0 +1,27 @@
++import Link from "next/link";
++import { Compass } from "lucide-react";
++
++// Next.js tries to statically export the auto-generated /_not-found route
++// by default. Our root layout's Sidebar reads cookies() on every request
++// (for per-user personalization), which forces the whole tree dynamic —
++// that's incompatible with a static export attempt and broke the build.
++// Explicitly forcing this page dynamic resolves the conflict.
++export const dynamic = "force-dynamic";
++
++export default function NotFound() {
++  return (
++    <div className="mx-auto flex max-w-md flex-col items-center px-6 py-24 text-center">
++      <Compass size={40} className="text-text-muted" />
++      <h1 className="mt-4 font-display text-2xl font-bold">Page not found</h1>
++      <p className="mt-2 text-sm text-text-muted">
++        The page you&apos;re looking for doesn&apos;t exist or may have moved.
++      </p>
++      <Link
++        href="/"
++        className="mt-6 rounded-full neu-raised px-6 py-2.5 text-sm font-medium text-accent"
++      >
++        Back to home
++      </Link>
++    </div>
++  );
++}
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index 5f21e2a..28e1100 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -16,12 +16,12 @@ import { createClient } from "@/lib/supabase/server";
+ import SidebarNavList, { type SidebarNavItem } from "@/components/SidebarNavList";
+ 
+ const PRIMARY_NAV: SidebarNavItem[] = [
+-  { href: "/", label: "Home", icon: Home },
+-  { href: "/shop", label: "Categories", icon: LayoutGrid },
+-  { href: "/shop?sort=top", label: "Top Charts", icon: BarChart3 },
+-  { href: "/shop?sort=new", label: "New Releases", icon: Sparkles },
+-  { href: "/shop?sort=trending", label: "Trending", icon: Flame },
+-  { href: "/shop?sort=editors", label: "Editor's Choice", icon: Award },
++  { href: "/", label: "Home", icon: <Home size={17} /> },
++  { href: "/shop", label: "Categories", icon: <LayoutGrid size={17} /> },
++  { href: "/shop?sort=top", label: "Top Charts", icon: <BarChart3 size={17} /> },
++  { href: "/shop?sort=new", label: "New Releases", icon: <Sparkles size={17} /> },
++  { href: "/shop?sort=trending", label: "Trending", icon: <Flame size={17} /> },
++  { href: "/shop?sort=editors", label: "Editor's Choice", icon: <Award size={17} /> },
+ ];
+ 
+ // Suspense fallback for SidebarNavList (which reads useSearchParams and so
+@@ -30,24 +30,21 @@ const PRIMARY_NAV: SidebarNavItem[] = [
+ function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
+   return (
+     <nav className="flex flex-col gap-1">
+-      {items.map((item) => {
+-        const Icon = item.icon;
+-        return (
+-          <Link
+-            key={item.href + item.label}
+-            href={item.href}
+-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted"
+-          >
+-            <Icon size={17} />
+-            <span className="flex-1">{item.label}</span>
+-            {!!item.badge && (
+-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+-                {item.badge}
+-              </span>
+-            )}
+-          </Link>
+-        );
+-      })}
++      {items.map((item) => (
++        <Link
++          key={item.href + item.label}
++          href={item.href}
++          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted"
++        >
++          {item.icon}
++          <span className="flex-1">{item.label}</span>
++          {!!item.badge && (
++            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
++              {item.badge}
++            </span>
++          )}
++        </Link>
++      ))}
+     </nav>
+   );
+ }
+@@ -95,9 +92,9 @@ export default async function Sidebar() {
+   }
+ 
+   const secondaryNav: SidebarNavItem[] = [
+-    { href: "/downloads", label: "My Apps", icon: Download },
+-    { href: "/", label: "Updates", icon: Bell, badge: unreadCount },
+-    { href: "/favorites", label: "Wishlist", icon: Heart },
++    { href: "/downloads", label: "My Apps", icon: <Download size={17} /> },
++    { href: "/", label: "Updates", icon: <Bell size={17} />, badge: unreadCount },
++    { href: "/favorites", label: "Wishlist", icon: <Heart size={17} /> },
+   ];
+ 
+   return (
+diff --git a/src/components/SidebarNavList.tsx b/src/components/SidebarNavList.tsx
+index da527c1..51d52d3 100644
+--- a/src/components/SidebarNavList.tsx
++++ b/src/components/SidebarNavList.tsx
+@@ -3,12 +3,16 @@
+ import Link from "next/link";
+ import { usePathname, useSearchParams } from "next/navigation";
+ import { motion } from "framer-motion";
+-import type { LucideIcon } from "lucide-react";
+ 
+ export type SidebarNavItem = {
+   href: string;
+   label: string;
+-  icon: LucideIcon;
++  // Already-rendered JSX (e.g. <Home size={17} />), not the icon component
++  // itself — passing a raw component/function reference as a prop from a
++  // Server Component to a "use client" component isn't serializable across
++  // the RSC boundary and breaks the build. A rendered element is just a
++  // plain descriptor object, so it serializes fine.
++  icon: React.ReactNode;
+   badge?: number;
+ };
+ 
+@@ -31,7 +35,6 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
+     <nav className="flex flex-col gap-1">
+       {items.map((item) => {
+         const active = isActivePath(pathname, search, item.href);
+-        const Icon = item.icon;
+         return (
+           <Link
+             key={item.href + item.label}
+@@ -48,7 +51,7 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
+                 transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+               />
+             )}
+-            <Icon size={17} />
++            {item.icon}
+             <span className="flex-1">{item.label}</span>
+             {!!item.badge && (
+               <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">

@@ -16,12 +16,12 @@ import { createClient } from "@/lib/supabase/server";
 import SidebarNavList, { type SidebarNavItem } from "@/components/SidebarNavList";
 
 const PRIMARY_NAV: SidebarNavItem[] = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/shop", label: "Categories", icon: LayoutGrid },
-  { href: "/shop?sort=top", label: "Top Charts", icon: BarChart3 },
-  { href: "/shop?sort=new", label: "New Releases", icon: Sparkles },
-  { href: "/shop?sort=trending", label: "Trending", icon: Flame },
-  { href: "/shop?sort=editors", label: "Editor's Choice", icon: Award },
+  { href: "/", label: "Home", icon: <Home size={17} /> },
+  { href: "/shop", label: "Categories", icon: <LayoutGrid size={17} /> },
+  { href: "/shop?sort=top", label: "Top Charts", icon: <BarChart3 size={17} /> },
+  { href: "/shop?sort=new", label: "New Releases", icon: <Sparkles size={17} /> },
+  { href: "/shop?sort=trending", label: "Trending", icon: <Flame size={17} /> },
+  { href: "/shop?sort=editors", label: "Editor's Choice", icon: <Award size={17} /> },
 ];
 
 // Suspense fallback for SidebarNavList (which reads useSearchParams and so
@@ -30,24 +30,21 @@ const PRIMARY_NAV: SidebarNavItem[] = [
 function StaticNavFallback({ items }: { items: SidebarNavItem[] }) {
   return (
     <nav className="flex flex-col gap-1">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href + item.label}
-            href={item.href}
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted"
-          >
-            <Icon size={17} />
-            <span className="flex-1">{item.label}</span>
-            {!!item.badge && (
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
-                {item.badge}
-              </span>
-            )}
-          </Link>
-        );
-      })}
+      {items.map((item) => (
+        <Link
+          key={item.href + item.label}
+          href={item.href}
+          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-text-muted"
+        >
+          {item.icon}
+          <span className="flex-1">{item.label}</span>
+          {!!item.badge && (
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+              {item.badge}
+            </span>
+          )}
+        </Link>
+      ))}
     </nav>
   );
 }
@@ -95,9 +92,9 @@ export default async function Sidebar() {
   }
 
   const secondaryNav: SidebarNavItem[] = [
-    { href: "/downloads", label: "My Apps", icon: Download },
-    { href: "/", label: "Updates", icon: Bell, badge: unreadCount },
-    { href: "/favorites", label: "Wishlist", icon: Heart },
+    { href: "/downloads", label: "My Apps", icon: <Download size={17} /> },
+    { href: "/", label: "Updates", icon: <Bell size={17} />, badge: unreadCount },
+    { href: "/favorites", label: "Wishlist", icon: <Heart size={17} /> },
   ];
 
   return (

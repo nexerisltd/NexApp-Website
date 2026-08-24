@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import type { LucideIcon } from "lucide-react";
 
 export type SidebarNavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  // Already-rendered JSX (e.g. <Home size={17} />), not the icon component
+  // itself — passing a raw component/function reference as a prop from a
+  // Server Component to a "use client" component isn't serializable across
+  // the RSC boundary and breaks the build. A rendered element is just a
+  // plain descriptor object, so it serializes fine.
+  icon: React.ReactNode;
   badge?: number;
 };
 
@@ -31,7 +35,6 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
     <nav className="flex flex-col gap-1">
       {items.map((item) => {
         const active = isActivePath(pathname, search, item.href);
-        const Icon = item.icon;
         return (
           <Link
             key={item.href + item.label}
@@ -48,7 +51,7 @@ export default function SidebarNavList({ items }: { items: SidebarNavItem[] }) {
                 transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
               />
             )}
-            <Icon size={17} />
+            {item.icon}
             <span className="flex-1">{item.label}</span>
             {!!item.badge && (
               <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-muted">
